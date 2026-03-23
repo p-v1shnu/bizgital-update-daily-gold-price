@@ -5,7 +5,8 @@ const path = require("path");
 const ROOT = __dirname;
 const ASSETS_DIR = path.join(ROOT, "assets");
 const DATA_DIR = path.join(ROOT, "data");
-const PORT = 3210;
+const PORT = Number(process.env.PORT || 3210);
+const HOST = "0.0.0.0";
 
 fs.mkdirSync(ASSETS_DIR, { recursive: true });
 fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -157,6 +158,6 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-server.listen(PORT, "127.0.0.1", () => {
-  console.log(`Gold Price Poster Editor running at http://127.0.0.1:${PORT}`);
+server.listen(PORT, HOST, () => {
+  console.log(`Gold Price Poster Editor running on ${HOST}:${PORT}`);
 });

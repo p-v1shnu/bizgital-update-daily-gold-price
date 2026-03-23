@@ -21,3 +21,14 @@
 ## ການຍ້າຍໄປເຄື່ອງອື່ນ
 
 ສາມາດຄັດລອກທັງໂຟນເດີນີ້ໄປໃຊ້ຕໍ່ໄດ້ເລີຍ ໂດຍເຄື່ອງປາຍທາງຕ້ອງມີ Node.js ສຳລັບຮັນ `start.bat`
+
+## ການ deploy ໄປ Render
+
+ໃຫ້ສ້າງ `Web Service` ແບບ Node.js ແລະໃຊ້ຄ່ານີ້:
+
+- Build Command: `npm install`
+- Start Command: `npm start`
+
+ໝາຍເຫດ:
+- server ຈະໃຊ້ `process.env.PORT` ອັດຕະໂນມັດ
+- ຖ້າໃຊ້ free tier ຂອງ Render, ໄຟລ໌ທີ່ app ຂຽນໃສ່ disk ອາດບໍ່ persistent ຫຼັງ redeploy ຫຼື restart

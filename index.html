@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="lo">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ແອັບແກ້ໄຂປ້າຍລາຄາຄຳ v2</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <main class="app-shell">
+    <div class="panel-header">
+      <div>
+        <p class="eyebrow">Version 2</p>
+        <h1>ເວັບແອັບໃຊ້ງານໃນເຄື່ອງ</h1>
+        <p class="panel-copy">ໃຊ້ template ຈາກໂຟນເດີນີ້ໂດຍກົງ, ອັບໂຫຼດໄຟລ໌ໃໝ່ໄດ້, ແລະລາກກ່ອງກຳນົດຕຳແໜ່ງຂໍ້ຄວາມເທິງ preview ກ່ອນບັນທຶກ layout</p>
+      </div>
+      <div class="button-row">
+        <button id="uploadTemplateButton" class="secondary-button top-button" type="button">ອັບໂຫຼດ Template ໃໝ່</button>
+        <button id="saveLayoutButton" class="secondary-button top-button" type="button">ບັນທຶກ Layout</button>
+        <button id="saveDefaultButton" class="secondary-button top-button" type="button">ບັນທຶກຕຳແໜ່ງນີ້ເປັນ Default ໃໝ່</button>
+        <button id="resetLayoutButton" class="secondary-button top-button" type="button">ຣີເຊັດຕຳແໜ່ງຂໍ້ຄວາມ</button>
+        <button id="exportButton" class="primary-button top-button" type="button">Export PNG ສຸດທ້າຍ</button>
+      </div>
+    </div>
+
+    <input id="templateFileInput" type="file" accept="image/png,image/jpeg,image/webp" hidden>
+
+    <div class="workspace-grid">
+      <section class="left-column">
+        <section class="section-card compact-grid">
+          <div class="field">
+            <label for="dateInput">ວັນທີ</label>
+            <input id="dateInput" type="date">
+          </div>
+          <div class="field">
+            <label for="timeInput">ເວລາ</label>
+            <input id="timeInput" type="time">
+          </div>
+          <div class="field">
+            <label for="barSellOneBaht">ຂາຍ 1 ບາດ</label>
+            <input id="barSellOneBaht" data-format="number" type="text" value="55,200,000">
+          </div>
+          <div class="field">
+            <label for="barBuyOneBaht">ຮັບຊື້ 1 ບາດ</label>
+            <input id="barBuyOneBaht" data-format="number" type="text" value="54,670,000">
+          </div>
+          <div class="field">
+            <label for="printSellOneBaht">ຂາຍ 1 ບາດຮູບພິມ</label>
+            <input id="printSellOneBaht" data-format="number" type="text" value="55,300,000">
+          </div>
+          <div class="field">
+            <label for="printBuyOneBaht">ຮັບຊື້ 1 ບາດຮູບພິມ</label>
+            <input id="printBuyOneBaht" data-format="number" type="text" value="53,890,000">
+          </div>
+          <div class="field">
+            <label for="printSellOneSalueng">ຂາຍ 1 ສະຫຼຶງ</label>
+            <input id="printSellOneSalueng" data-format="number" type="text" value="13,825,000">
+          </div>
+          <div class="field">
+            <label for="printBuyOneSalueng">ຮັບຊື້ 1 ສະຫຼຶງ</label>
+            <input id="printBuyOneSalueng" data-format="number" type="text" value="13,473,000">
+          </div>
+          <div class="field">
+            <label for="printSellFiveTamlueng">ຂາຍ 5 ຫຸນ</label>
+            <input id="printSellFiveTamlueng" data-format="number" type="text" value="6,912,000">
+          </div>
+          <div class="field">
+            <label for="printBuyFiveTamlueng">ຮັບຊື້ 5 ຫຸນ</label>
+            <input id="printBuyFiveTamlueng" data-format="number" type="text" value="6,737,000">
+          </div>
+        </section>
+
+        <section class="section-card help-card">
+          <h2>ແກ້ໄຂຕຳແໜ່ງ</h2>
+          <p>ລາກກ່ອງສີຟ້າເທິງ preview ເພື່ອຂະຍັບຕຳແໜ່ງຂໍ້ຄວາມແຕ່ລະຊ່ອງ ແລ້ວກົດ ບັນທຶກ Layout ເມື່ອຕ້ອງການບັນທຶກລົງໄຟລ໌ໃນໂຟນເດີນີ້</p>
+        </section>
+
+        <p id="statusText" class="status-text">ກຳລັງໂຫຼດ template...</p>
+      </section>
+
+      <aside class="right-column">
+        <section class="section-card preview-card">
+          <div class="preview-head">
+            <h2>ຕົວຢ່າງກ່ອນ Export</h2>
+            <p>ລາກກ່ອງຂໍ້ຄວາມໄດ້ໂດຍກົງ</p>
+          </div>
+          <div id="previewStage" class="preview-stage">
+            <canvas id="previewCanvas" width="800" height="1280"></canvas>
+            <div id="previewOverlay" class="preview-overlay"></div>
+          </div>
+        </section>
+      </aside>
+    </div>
+  </main>
+
+  <canvas id="posterCanvas" width="800" height="1280" hidden></canvas>
+
+  <script src="./app.js"></script>
+</body>
+</html>

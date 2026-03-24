@@ -3,16 +3,16 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ແອັບແກ້ໄຂປ້າຍລາຄາຄຳ v2</title>
+  <title>ແອັບແກ້ໄຂປ້າຍລາຄາຄຳ v2.1</title>
   <link rel="stylesheet" href="./styles.css">
 </head>
 <body>
   <main class="app-shell">
     <div class="panel-header">
       <div>
-        <p class="eyebrow">Version 2</p>
+        <p class="eyebrow">Version 2.1</p>
         <h1>ເວັບແອັບໃຊ້ງານໃນເຄື່ອງ</h1>
-        <p class="panel-copy">ໃຊ້ template ຈາກໂຟນເດີນີ້ໂດຍກົງ, ອັບໂຫຼດໄຟລ໌ໃໝ່ໄດ້, ແລະລາກກ່ອງກຳນົດຕຳແໜ່ງຂໍ້ຄວາມເທິງ preview ກ່ອນບັນທຶກ layout</p>
+        <p class="panel-copy">ໃຊ້ template ຈາກລະບົບ, ຫຼື ອັບໂຫຼດໄຟລ໌ໃໝ່ໄດ້, ແລະລາກຍ້າຍຕຳແໜ່ງຂໍ້ຄວາມເທິງ preview ກ່ອນບັນທຶກ layout</p>
       </div>
       <div class="button-row">
         <button id="uploadTemplateButton" class="secondary-button top-button" type="button">ອັບໂຫຼດ Template ໃໝ່</button>
@@ -27,29 +27,34 @@
 
     <div class="workspace-grid">
       <section class="left-column">
+        <section class="section-card date-time-card">
+          <div class="date-time-grid">
+            <div class="field date-time-field">
+              <label for="dateInput">ວັນທີ</label>
+              <input id="dateInput" type="date">
+            </div>
+            <div class="field date-time-field">
+              <label for="timeInput">ເວລາ</label>
+              <input id="timeInput" type="time">
+            </div>
+          </div>
+        </section>
+
         <section class="section-card compact-grid">
           <div class="field">
-            <label for="dateInput">ວັນທີ</label>
-            <input id="dateInput" type="date">
-          </div>
-          <div class="field">
-            <label for="timeInput">ເວລາ</label>
-            <input id="timeInput" type="time">
-          </div>
-          <div class="field">
-            <label for="barSellOneBaht">ຂາຍ 1 ບາດ</label>
+            <label for="barSellOneBaht">ຂາຍ 1 ບາດແທ່ງ</label>
             <input id="barSellOneBaht" data-format="number" type="text" value="55,200,000">
           </div>
           <div class="field">
-            <label for="barBuyOneBaht">ຮັບຊື້ 1 ບາດ</label>
+            <label for="barBuyOneBaht">ຮັບຊື້ 1 ບາດແທ່ງ</label>
             <input id="barBuyOneBaht" data-format="number" type="text" value="54,670,000">
           </div>
           <div class="field">
-            <label for="printSellOneBaht">ຂາຍ 1 ບາດຮູບພິມ</label>
+            <label for="printSellOneBaht">ຂາຍ 1 ບາດຮູບປະພັນ</label>
             <input id="printSellOneBaht" data-format="number" type="text" value="55,300,000">
           </div>
           <div class="field">
-            <label for="printBuyOneBaht">ຮັບຊື້ 1 ບາດຮູບພິມ</label>
+            <label for="printBuyOneBaht">ຮັບຊື້ 1 ບາດຮູບປະພັນ</label>
             <input id="printBuyOneBaht" data-format="number" type="text" value="53,890,000">
           </div>
           <div class="field">
@@ -71,18 +76,20 @@
         </section>
 
         <section class="section-card help-card">
-          <h2>ແກ້ໄຂຕຳແໜ່ງ</h2>
-          <p>ລາກກ່ອງສີຟ້າເທິງ preview ເພື່ອຂະຍັບຕຳແໜ່ງຂໍ້ຄວາມແຕ່ລະຊ່ອງ ແລ້ວກົດ ບັນທຶກ Layout ເມື່ອຕ້ອງການບັນທຶກລົງໄຟລ໌ໃນໂຟນເດີນີ້</p>
+          <h2>ແກ້ໄຂຕຳແໜ່ງໂຕໜັງສືໄດ້ເດີ!</h2>
+          <p>ເຈົ້າສາມາດຍ້າຍຕຳແໜ່ງໂຕເລກຂໍ້ມູນແຕ່ລະບ່ອນໄດ້ ແລ້ວກົດ ບັນທຶກ Layout ເມື່ອຕ້ອງການບັນທຶກໄວ້ໃຊ້ເທື່ອໜ້າ ຫຼື ບັນທຶກເປັນຄ່າ Default ສຳລັບໄວ້ Reset</p>
         </section>
-
-        <p id="statusText" class="status-text">ກຳລັງໂຫຼດ template...</p>
+        <section class="section-card status-card">
+          <h2>Status</h2>
+          <p id="statusText" class="status-text">ກຳລັງໂຫຼດ template...</p>
+        </section>
+        
       </section>
 
       <aside class="right-column">
         <section class="section-card preview-card">
           <div class="preview-head">
             <h2>ຕົວຢ່າງກ່ອນ Export</h2>
-            <p>ລາກກ່ອງຂໍ້ຄວາມໄດ້ໂດຍກົງ</p>
           </div>
           <div id="previewStage" class="preview-stage">
             <canvas id="previewCanvas" width="800" height="1280"></canvas>

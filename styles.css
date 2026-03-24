@@ -116,6 +116,17 @@ h2 {
   border: 1px solid rgba(143, 95, 20, 0.12);
 }
 
+.date-time-card {
+  padding: 16px 18px;
+}
+
+.date-time-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(180px, 1fr));
+  gap: 14px 16px;
+  align-items: end;
+}
+
 .compact-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -128,6 +139,11 @@ h2 {
   gap: 8px;
 }
 
+.date-time-field {
+  min-width: 0;
+  min-height: 96px;
+}
+
 label {
   font-size: 14px;
   font-weight: 600;
@@ -137,13 +153,20 @@ input[type="text"],
 input[type="date"],
 input[type="time"] {
   width: 100%;
+  min-width: 0;
   padding: 12px 14px;
   border-radius: 12px;
   border: 1px solid rgba(92, 54, 9, 0.18);
   background: #fffdf9;
   font-size: 18px;
   font-family: var(--lao-font);
+  line-height: 1.3;
   color: var(--text);
+}
+
+input[type="date"],
+input[type="time"] {
+  min-height: 52px;
 }
 
 input[type="text"]:focus,
@@ -314,6 +337,10 @@ input[type="time"]:focus {
 
   #previewCanvas {
     max-width: 100%;
+  }
+
+  .date-time-grid {
+    grid-template-columns: 1fr;
   }
 
   .compact-grid {

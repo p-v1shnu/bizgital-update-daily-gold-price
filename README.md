@@ -1,45 +1,39 @@
-# Bizgital Update Daily Gold Price (v3 logic)
+# Bizgital Update Daily Gold Price
 
-ໂປຣເຈກນີ້ເປັນ web app ສຳລັບແກ້ໄຂປ້າຍລາຄາຄຳ (template + layout) ແລະ export ເປັນ PNG.
+Web app for editing daily gold price data and publishing numeric values to a WordPress website via signed webhook.
 
-## Current architecture
+## Overview
 
-- Backend: Node.js (`server.js`) ບໍ່ໃຊ້ database
-- Data storage: ເກັບເປັນໄຟລ໌ local
-  - `assets/template.*`
-  - `data/layout.json`
-  - `data/default-layout.json`
-- Frontend: static files (`index.html`, `app.js`, `styles.css`)
-- Production runtime: PM2 + Caddy reverse proxy
+- Backend: Node.js (`server.js`)
+- Frontend: `index.html` + `app.js` + `styles.css`
+- Storage: local files (`assets/`, `data/`)
+- Security: write-token protected API + static allowlist + body size limits
+- New integration: `Publish WordPress` button sends numeric payload to WordPress
 
-## Requirements
+## Environment
 
-- Node.js 20+
-- npm
-- PM2 (production)
-- Caddy (production)
-
-## Environment (.env)
-
-ສ້າງ `.env` ຈາກ `.env.example`:
+Copy `.env.example` to `.env`:
 
 ```bash
 cp .env.example .env
 ```
 
-ຕົວຢ່າງ:
+Example:
 
 ```env
 NODE_ENV=production
 PORT=3210
 WRITE_API_TOKEN=replace-with-a-long-random-token
+WP_WEBHOOK_URL=https://client-site.example/wp-json/bizgital/v1/gold-price
+WP_WEBHOOK_SECRET=replace-with-wordpress-shared-secret
+WP_WEBHOOK_TIMEOUT_MS=8000
 ```
 
 Notes:
-- `NODE_ENV=production` ຕ້ອງມີ `WRITE_API_TOKEN` ສະເໝີ
-- app ຈະ fail startup ທັນທີ ຖ້າ production ແລ້ວ token ບໍ່ຖືກຕັ້ງ
+- When `NODE_ENV=production`, `WRITE_API_TOKEN` is required.
+- `WP_WEBHOOK_URL` + `WP_WEBHOOK_SECRET` are required only for publish-to-WordPress flow.
 
-## Run locally
+## Run
 
 ```bash
 npm install
@@ -48,15 +42,16 @@ npm start
 
 Open: `http://127.0.0.1:3210`
 
-## PM2 (production)
+## Production
+
+PM2:
 
 ```bash
 pm2 restart gold-price-editor --update-env || pm2 start server.js --name gold-price-editor
 pm2 save
-pm2 ls
 ```
 
-## Caddy (production)
+Caddy example:
 
 ```caddy
 gold.example.com {
@@ -64,7 +59,7 @@ gold.example.com {
         team01 $2a$14$PUT_HASH_HERE
     }
 
-    @writePaths path /api/layout /api/default-layout /api/template
+    @writePaths path /api/layout /api/default-layout /api/template /api/publish-wordpress
     reverse_proxy @writePaths 127.0.0.1:3210 {
         header_up X-Write-Token "SAME_VALUE_AS_WRITE_API_TOKEN"
     }
@@ -73,39 +68,72 @@ gold.example.com {
 }
 ```
 
-Important:
-- `X-Write-Token` ໃນ Caddy ຕ້ອງຄືກັນກັບ `WRITE_API_TOKEN` ໃນ `.env`
-- ຄວນປິດ public access ທີ່ port app (3210) ແລະໃຫ້ເຂົ້າຜ່ານ Caddy ເທົ່ານັ້ນ
+## WordPress integration (numeric webhook)
 
-## Security behavior (current)
+### 1) Install plugin on WordPress
 
-1. Static allowlist:
-- ເປີດໄດ້ສະເພາະ `/`, `/app.js`, `/styles.css`, `/assets/fonts/*`
-- ບລັອກ `.git`, `/data/*` ແລະ dot-paths
+Plugin file in this repo:
 
-2. Write API auth:
-- `POST /api/layout`
-- `POST /api/default-layout`
-- `POST /api/template`
-- ຕ້ອງສົ່ງ token ຜ່ານ `Authorization: Bearer ...` ຫຼື `X-Write-Token`
+- `wordpress-plugin/bizgital-gold-price-webhook/bizgital-gold-price-webhook.php`
 
-3. Payload limits:
-- `/api/template`: 10MB
-- `/api/layout`, `/api/default-layout`: 256KB
+Install to WordPress:
 
-4. Error handling:
-- invalid json/data -> `400`
-- unauthorized -> `401`
-- payload too large -> `413`
-- unexpected server error -> `500` (ບໍ່ໂຊ stack trace ອອກ client)
+1. Create directory `wp-content/plugins/bizgital-gold-price-webhook`
+2. Upload `bizgital-gold-price-webhook.php`
+3. Activate plugin in WordPress admin
 
-## Upload template constraints
+### 2) Configure shared secret
 
-- Supported formats: `PNG`, `JPG/JPEG`, `WEBP`
-- ຖ້າໄຟລ໌ໃຫຍ່ເກີນ ຫຼື format ບໍ່ຮອງຮັບ ຈະບໍ່ອັບເດດ
-- HEIC ຈາກມືຖືບາງຮຸ່ນມັກບໍ່ຜ່ານ (ແນະນຳ convert ເປັນ JPG/PNG)
+In WordPress Admin:
 
-## Main API endpoints
+- `Settings` -> `Bizgital Gold Price`
+- Set `Webhook Secret` (must match `WP_WEBHOOK_SECRET` in this app)
+
+### 3) Publish from this app
+
+Use `Publish WordPress` button in the web app.
+
+The app sends signed payload to:
+
+- `POST /wp-json/bizgital/v1/gold-price`
+
+Signature headers:
+
+- `X-Bizgital-Timestamp`
+- `X-Bizgital-Signature` (`sha256=<hmac>`)
+
+### 4) Show on website
+
+Use shortcode:
+
+```text
+[bizgital_gold_price]
+```
+
+The plugin renders branded card UI and auto-switches labels for Lao/English by site locale.
+
+## Payload shape sent to WordPress
+
+```json
+{
+  "source": "bizgital-update-daily-gold-price",
+  "sent_at": "2026-05-21T12:34:56.000Z",
+  "date": "21/05/2026",
+  "time": "11:59",
+  "values": {
+    "bar_sell_one_baht": 55200000,
+    "bar_buy_one_baht": 54670000,
+    "print_sell_one_baht": 55300000,
+    "print_buy_one_baht": 53890000,
+    "print_sell_one_salueng": 13825000,
+    "print_buy_one_salueng": 13473000,
+    "print_sell_five_houn": 6912000,
+    "print_buy_five_houn": 6737000
+  }
+}
+```
+
+## API endpoints (current)
 
 - `GET /api/template`
 - `POST /api/template`
@@ -113,8 +141,37 @@ Important:
 - `POST /api/layout`
 - `GET /api/default-layout`
 - `POST /api/default-layout`
+- `POST /api/publish-wordpress`
 
-## Repository
+## Quick deploy + test scripts
 
-Target new repository:
-- `https://github.com/p-v1shnu/bizgital-update-daily-gold-price.git`
+On Ubuntu server:
+
+```bash
+bash scripts/server-update-houn.sh
+```
+
+Test publish with new Houn keys:
+
+```bash
+WRITE_API_TOKEN="your-token" bash scripts/test-publish-houn.sh
+```
+
+On Windows PowerShell:
+
+```powershell
+.\scripts\test-publish-houn.ps1 -Token "your-token"
+```
+
+If you get `invalid value: printSellFiveTamlueng`, your running process is still old code.
+Run server update script, then restart PM2 with `--update-env`.
+
+## Security behavior
+
+1. Write APIs require token (`Authorization: Bearer ...` or `X-Write-Token`)
+2. Static allowlist only (`/`, `/app.js`, `/styles.css`, `/assets/fonts/*`)
+3. Request size limits:
+- template upload: 10MB
+- layout/default-layout: 256KB
+- publish payload: 64KB
+4. No stack traces returned to clients on 500 errors

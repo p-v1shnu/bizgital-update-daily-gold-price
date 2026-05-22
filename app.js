@@ -6,17 +6,31 @@ const previewOverlay = document.getElementById("previewOverlay");
 const previewStage = document.getElementById("previewStage");
 
 const LAO_FONT_FAMILY = "'Noto Sans Lao Local', 'Noto Sans Lao', sans-serif";
+const LEGACY_VALUE_FIELD_MAP = {
+  printSellFiveTamlueng: "printSellFiveHoun",
+  printBuyFiveTamlueng: "printBuyFiveHoun",
+};
+
+function normalizeValueFieldName(valueField) {
+  return LEGACY_VALUE_FIELD_MAP[valueField] || valueField;
+}
+
+function findSlotByValueField(slots, targetValueField) {
+  const normalizedTarget = normalizeValueFieldName(targetValueField);
+  return slots.find((slot) => normalizeValueFieldName(slot.valueField) === normalizedTarget);
+}
+
 const DEFAULT_LAYOUT = {
   dateStrip: { x: 106, y: 252, width: 590, height: 72, textX: 400, textY: 310 },
   slots: [
-    { x: 151, y: 529, width: 302, height: 66, textX: 302, textY: 580, valueField: "barSellOneBaht", label: "ຄຳແທ່ງ ຂາຍ" },
-    { x: 470, y: 529, width: 303, height: 66, textX: 622, textY: 580, valueField: "barBuyOneBaht", label: "ຄຳແທ່ງ ຮັບຊື້" },
-    { x: 151, y: 799, width: 302, height: 66, textX: 302, textY: 850, valueField: "printSellOneBaht", label: "ຮູບພິມ 1 ບາດ ຂາຍ" },
-    { x: 470, y: 799, width: 303, height: 66, textX: 622, textY: 850, valueField: "printBuyOneBaht", label: "ຮູບພິມ 1 ບາດ ຮັບຊື້" },
-    { x: 151, y: 918, width: 302, height: 66, textX: 302, textY: 948, valueField: "printSellOneSalueng", label: "1 ສະຫຼຶງ ຂາຍ" },
-    { x: 470, y: 918, width: 303, height: 66, textX: 622, textY: 948, valueField: "printBuyOneSalueng", label: "1 ສະຫຼຶງ ຮັບຊື້" },
-    { x: 151, y: 1039, width: 302, height: 66, textX: 302, textY: 1089, valueField: "printSellFiveTamlueng", label: "5 ຫຸນ ຂາຍ" },
-    { x: 470, y: 1039, width: 303, height: 66, textX: 622, textY: 1089, valueField: "printBuyFiveTamlueng", label: "5 ຫຸນ ຮັບຊື້" },
+    { x: 151, y: 529, width: 302, height: 66, textX: 302, textY: 580, valueField: "barSellOneBaht", label: "ຄຳແທ່ງ ລາຄາຂາຍ" },
+    { x: 470, y: 529, width: 303, height: 66, textX: 622, textY: 580, valueField: "barBuyOneBaht", label: "ຄຳແທ່ງ ລາຄາຊື້" },
+    { x: 151, y: 799, width: 302, height: 66, textX: 302, textY: 850, valueField: "printSellOneBaht", label: "ຮູບພິມ 1 ບາດ ລາຄາຂາຍ" },
+    { x: 470, y: 799, width: 303, height: 66, textX: 622, textY: 850, valueField: "printBuyOneBaht", label: "ຮູບພິມ 1 ບາດ ລາຄາຊື້" },
+    { x: 151, y: 918, width: 302, height: 66, textX: 302, textY: 948, valueField: "printSellOneSalueng", label: "1 ສະຫຼຶງ ລາຄາຂາຍ" },
+    { x: 470, y: 918, width: 303, height: 66, textX: 622, textY: 948, valueField: "printBuyOneSalueng", label: "1 ສະຫຼຶງ ລາຄາຊື້" },
+    { x: 151, y: 1039, width: 302, height: 66, textX: 302, textY: 1089, valueField: "printSellFiveHoun", label: "5 ຫຸນ ລາຄາຂາຍ" },
+    { x: 470, y: 1039, width: 303, height: 66, textX: 622, textY: 1089, valueField: "printBuyFiveHoun", label: "5 ຫຸນ ລາຄາຊື້" },
   ],
 };
 
@@ -29,8 +43,8 @@ const fields = {
   printBuyOneBaht: document.getElementById("printBuyOneBaht"),
   printSellOneSalueng: document.getElementById("printSellOneSalueng"),
   printBuyOneSalueng: document.getElementById("printBuyOneSalueng"),
-  printSellFiveTamlueng: document.getElementById("printSellFiveTamlueng"),
-  printBuyFiveTamlueng: document.getElementById("printBuyFiveTamlueng"),
+  printSellFiveHoun: document.getElementById("printSellFiveHoun"),
+  printBuyFiveHoun: document.getElementById("printBuyFiveHoun"),
 };
 
 const uploadTemplateButton = document.getElementById("uploadTemplateButton");
@@ -38,6 +52,7 @@ const templateFileInput = document.getElementById("templateFileInput");
 const saveLayoutButton = document.getElementById("saveLayoutButton");
 const saveDefaultButton = document.getElementById("saveDefaultButton");
 const resetLayoutButton = document.getElementById("resetLayoutButton");
+const publishWordpressButton = document.getElementById("publishWordpressButton");
 const exportButton = document.getElementById("exportButton");
 const statusText = document.getElementById("statusText");
 
@@ -45,6 +60,8 @@ let builtInTemplate = null;
 let layout = structuredClone(DEFAULT_LAYOUT);
 let defaultLayout = structuredClone(DEFAULT_LAYOUT);
 let dragState = null;
+let dragRaf = null;
+let resizeRaf = null;
 
 async function ensureLaoFontsLoaded() {
   if (!document.fonts) {
@@ -95,8 +112,8 @@ function getPosterData() {
     printBuyOneBaht: fields.printBuyOneBaht.value.trim() || "",
     printSellOneSalueng: fields.printSellOneSalueng.value.trim() || "",
     printBuyOneSalueng: fields.printBuyOneSalueng.value.trim() || "",
-    printSellFiveTamlueng: fields.printSellFiveTamlueng.value.trim() || "",
-    printBuyFiveTamlueng: fields.printBuyFiveTamlueng.value.trim() || "",
+    printSellFiveHoun: fields.printSellFiveHoun.value.trim() || "",
+    printBuyFiveHoun: fields.printBuyFiveHoun.value.trim() || "",
   };
 }
 
@@ -126,18 +143,17 @@ function drawText(targetCtx, text, x, y, options = {}) {
 }
 
 function fitFontSize(targetCtx, text, maxWidth, baseFontSize, fontFamily, fontWeight = "700") {
+  const originalFont = targetCtx.font;
   let size = baseFontSize;
   while (size > 20) {
-    targetCtx.save();
     targetCtx.font = `${fontWeight} ${size}px ${fontFamily}`;
-    const measured = targetCtx.measureText(text).width;
-    targetCtx.restore();
-    if (measured <= maxWidth) {
-      return size;
+    if (targetCtx.measureText(text).width <= maxWidth) {
+      break;
     }
     size -= 1;
   }
-  return 20;
+  targetCtx.font = originalFont;
+  return Math.max(size, 20);
 }
 
 function getDateDisplayText(data) {
@@ -211,13 +227,15 @@ function drawOverlayValues(targetCtx, data) {
 
 function drawPosterTo(targetCtx) {
   const data = getPosterData();
-  targetCtx.clearRect(0, 0, canvas.width, canvas.height);
+  const w = targetCtx.canvas.width;
+  const h = targetCtx.canvas.height;
+  targetCtx.clearRect(0, 0, w, h);
 
   if (!builtInTemplate) {
     return;
   }
 
-  targetCtx.drawImage(builtInTemplate, 0, 0, canvas.width, canvas.height);
+  targetCtx.drawImage(builtInTemplate, 0, 0, w, h);
   drawOverlayValues(targetCtx, data);
 }
 
@@ -315,8 +333,8 @@ async function loadLayout() {
     layout = {
       dateStrip: { ...DEFAULT_LAYOUT.dateStrip, ...(loaded.dateStrip || {}) },
       slots: DEFAULT_LAYOUT.slots.map((slot) => {
-        const found = (loaded.slots || []).find((item) => item.valueField === slot.valueField);
-        return { ...slot, ...(found || {}) };
+        const found = findSlotByValueField(loaded.slots || [], slot.valueField);
+        return { ...slot, ...(found || {}), valueField: slot.valueField };
       }),
     };
   } catch (_error) {
@@ -335,8 +353,8 @@ async function loadDefaultLayout() {
     defaultLayout = {
       dateStrip: { ...DEFAULT_LAYOUT.dateStrip, ...(loaded.dateStrip || {}) },
       slots: DEFAULT_LAYOUT.slots.map((slot) => {
-        const found = (loaded.slots || []).find((item) => item.valueField === slot.valueField);
-        return { ...slot, ...(found || {}) };
+        const found = findSlotByValueField(loaded.slots || [], slot.valueField);
+        return { ...slot, ...(found || {}), valueField: slot.valueField };
       }),
     };
   } catch (_error) {
@@ -352,7 +370,7 @@ async function saveLayout() {
       body: JSON.stringify(layout),
     });
     if (!response.ok) {
-      throw new Error("save failed");
+      throw new Error(response.status === 401 || response.status === 503 ? `auth error (${response.status})` : "save failed");
     }
     statusText.textContent = "ບັນທຶກ layout ແລ້ວ";
   } catch (error) {
@@ -388,7 +406,8 @@ function getLayoutTarget(key) {
   if (key === "date") {
     return layout.dateStrip;
   }
-  return layout.slots.find((slot) => slot.valueField === key);
+  const normalizedKey = normalizeValueFieldName(key);
+  return layout.slots.find((slot) => normalizeValueFieldName(slot.valueField) === normalizedKey);
 }
 
 function getPreviewScale() {
@@ -416,7 +435,10 @@ function onDragMove(event) {
   target.y = dragState.startY + dy;
   target.textX = dragState.startTextX + dx;
   target.textY = dragState.startTextY + dy;
-  renderAll();
+
+  if (!dragRaf) {
+    dragRaf = requestAnimationFrame(() => { dragRaf = null; renderAll(); });
+  }
 }
 
 function onDragEnd() {
@@ -443,10 +465,10 @@ function handleOverlayPointerDown(event) {
     key: handle.dataset.key,
     startPointerX: (event.clientX - overlayRect.left) / scale,
     startPointerY: (event.clientY - overlayRect.top) / scale,
-    startX: target.x || 0,
-    startY: target.y || 0,
-    startTextX: target.textX,
-    startTextY: target.textY,
+    startX: target.x ?? 0,
+    startY: target.y ?? 0,
+    startTextX: target.textX ?? 0,
+    startTextY: target.textY ?? 0,
   };
   renderAll();
   window.addEventListener("pointermove", onDragMove);
@@ -478,6 +500,34 @@ async function uploadTemplate(file) {
 
   await loadTemplate();
   statusText.textContent = `ອັບເດດ template ແລ້ວ: ${file.name}`;
+}
+
+async function publishToWordpress() {
+  const payload = getPosterData();
+  let response;
+  try {
+    response = await fetch("/api/publish-wordpress", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+  } catch (_error) {
+    throw new Error("publish_server_unreachable");
+  }
+
+  let body = null;
+  try {
+    body = await response.json();
+  } catch (_error) {
+    body = null;
+  }
+
+  if (!response.ok) {
+    const reason = body?.error ? `${response.status}:${body.error}` : String(response.status);
+    throw new Error(`publish_http_${reason}`);
+  }
+
+  return body || { ok: true };
 }
 
 async function loadTemplate() {
@@ -537,14 +587,19 @@ function getTemplateErrorMessage(error) {
   if (error?.message?.startsWith("upload_http_")) {
     return `ອັບໂຫຼດ template ບໍ່ສຳເລັດ (${error.message.replace("upload_http_", "")})`;
   }
+  if (error?.message === "publish_server_unreachable") {
+    return "ສົ່ງໄປ WordPress ບໍ່ໄດ້ (server unreachable)";
+  }
+  if (error?.message?.startsWith("publish_http_")) {
+    return `ສົ່ງໄປ WordPress ບໍ່ສຳເລັດ (${error.message.replace("publish_http_", "")})`;
+  }
   return error?.message || "ບໍ່ຮູ້ສາເຫດ";
 }
 
 async function bootstrap() {
   initializeDateTimeInputs();
   await ensureLaoFontsLoaded();
-  await loadDefaultLayout();
-  await loadLayout();
+  await Promise.all([loadDefaultLayout(), loadLayout()]);
   try {
     await loadTemplate();
     statusText.textContent = "ໂຫຼດ template ແລ້ວ";
@@ -594,6 +649,20 @@ resetLayoutButton.addEventListener("click", async () => {
   statusText.textContent = "ຣີເຊັດຕຳແໜ່ງກັບໄປຫາ default ແລ້ວ";
 });
 
+publishWordpressButton.addEventListener("click", async () => {
+  try {
+    publishWordpressButton.disabled = true;
+    statusText.textContent = "ກຳລັງສົ່ງຂໍ້ມູນໄປ WordPress...";
+    const result = await publishToWordpress();
+    const responseStatus = result?.status ? ` (HTTP ${result.status})` : "";
+    statusText.textContent = `ສົ່ງຂໍ້ມູນໄປ WordPress ສຳເລັດ${responseStatus}`;
+  } catch (error) {
+    statusText.textContent = getTemplateErrorMessage(error);
+  } finally {
+    publishWordpressButton.disabled = false;
+  }
+});
+
 templateFileInput.addEventListener("change", async (event) => {
   const [file] = event.target.files || [];
   if (!file) {
@@ -619,6 +688,9 @@ Object.values(fields).forEach((input) => {
 });
 
 previewOverlay.addEventListener("pointerdown", handleOverlayPointerDown);
-window.addEventListener("resize", renderAll);
+window.addEventListener("resize", () => {
+  if (resizeRaf) cancelAnimationFrame(resizeRaf);
+  resizeRaf = requestAnimationFrame(() => { resizeRaf = null; renderAll(); });
+});
 
 bootstrap();

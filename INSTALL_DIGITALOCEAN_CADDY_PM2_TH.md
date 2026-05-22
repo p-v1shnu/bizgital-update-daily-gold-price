@@ -1,63 +1,38 @@
-# คู่มือติดตั้ง/อัปเดตแบบละเอียด (DigitalOcean + PM2 + Caddy + .env)
+# คู่มือติดตั้งแบบละเอียด (DigitalOcean + Caddy + PM2 + WordPress)
 
-เอกสารนี้เป็นคู่มือแยกต่างหากจาก `README.md` และ **ไม่ทับไฟล์เดิม**
+เอกสารนี้สำหรับติดตั้งและเชื่อมระบบให้ใช้งานจริงแบบครบ flow:
 
-แนวทางของคู่มือนี้: ใช้โปรเจกต์นี้เป็นเวอร์ชันหลักต่อเนื่อง โดย **ไม่ทำขั้นตอนลบระบบเดิม**
+- รันแอปด้วย PM2
+- เปิดผ่าน Caddy
+- เชื่อม webhook ไป WordPress
+- ติดตั้ง/อัปเดตปลั๊กอิน WordPress
 
-## 1) สิ่งที่ต้องเตรียมก่อนเริ่ม
+## 1) เตรียมเครื่อง
 
-- เซิร์ฟเวอร์ Ubuntu บน DigitalOcean
-- โดเมนที่ชี้มายังเครื่องแล้ว (ตัวอย่าง `gold.example.com`)
-- สิทธิ์ `root` หรือ user ที่มี `sudo`
-- Repository: `https://github.com/JFallenArch/UpdateDailyGoldPrice.git`
-
----
-
-## 2) SSH เข้าเครื่องและเช็คของที่ต้องใช้
+SSH เข้าเซิร์ฟเวอร์:
 
 ```bash
 ssh root@YOUR_SERVER_IP
 ```
 
-เช็ค Node.js / npm:
+ตรวจเครื่องมือ:
 
 ```bash
 node -v
 npm -v
-which node
-```
-
-เช็ค PM2 / Caddy:
-
-```bash
 pm2 -v
 caddy version
 ```
 
-ถ้ายังไม่มี PM2:
+ถ้าไม่มี PM2:
 
 ```bash
 npm install -g pm2
 ```
 
-ถ้ายังไม่มี Caddy:
+## 2) เตรียมโค้ดโปรเจกต์
 
-```bash
-sudo apt update
-sudo apt install -y debian-keyring debian-archive-keyring apt-transport-https curl
-curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
-curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-stable.list
-sudo chmod o+r /usr/share/keyrings/caddy-stable-archive-keyring.gpg
-sudo chmod o+r /etc/apt/sources.list.d/caddy-stable.list
-sudo apt update
-sudo apt install -y caddy
-```
-
----
-
-## 3) เตรียมโปรเจกต์เวอร์ชันหลัก (ไม่ลบของเดิม)
-
-### 3.1 ถ้ามีโฟลเดอร์โปรเจกต์อยู่แล้ว (กรณีคุณ)
+กรณีมีโฟลเดอร์แล้ว:
 
 ```bash
 cd /home/automation-hub-sgp01/UpdateDailyGoldPrice
@@ -65,62 +40,42 @@ git pull origin main
 npm install
 ```
 
-### 3.2 ถ้ายังไม่มีโฟลเดอร์โปรเจกต์
+กรณียังไม่มีโฟลเดอร์:
 
 ```bash
 cd /home/automation-hub-sgp01
-git clone https://github.com/JFallenArch/UpdateDailyGoldPrice.git
+git clone https://github.com/p-v1shnu/bizgital-update-daily-gold-price.git UpdateDailyGoldPrice
 cd UpdateDailyGoldPrice
 npm install
 ```
 
----
-
-## 4) ตั้งค่า `.env` (โครงสร้างหลักของระบบใหม่)
-
-เข้าโฟลเดอร์โปรเจกต์:
+## 3) ตั้งค่า `.env`
 
 ```bash
 cd /home/automation-hub-sgp01/UpdateDailyGoldPrice
-```
-
-สร้าง `.env` ครั้งแรก:
-
-```bash
 cp .env.example .env
-```
-
-สร้าง token แบบสุ่ม:
-
-```bash
 openssl rand -hex 32
-```
-
-เปิดไฟล์ `.env`:
-
-```bash
 nano .env
 ```
 
-ใส่ค่า:
+ตัวอย่างค่า:
 
 ```env
 NODE_ENV=production
 PORT=3210
-WRITE_API_TOKEN=PASTE_RANDOM_TOKEN_HERE
+WRITE_API_TOKEN=PASTE_RANDOM_TOKEN
+WP_WEBHOOK_URL=https://YOUR-WP-DOMAIN/wp-json/bizgital/v1/gold-price
+WP_WEBHOOK_SECRET=PASTE_RANDOM_SECRET
+WP_WEBHOOK_TIMEOUT_MS=8000
 ```
 
-ตั้ง permission:
+ตั้งสิทธิ์ไฟล์:
 
 ```bash
 chmod 600 .env
 ```
 
----
-
-## 5) รันแอปด้วย PM2 และตั้งให้รันตลอด
-
-ใช้คำสั่งนี้ (ถ้ามี process อยู่แล้วจะ restart, ถ้ายังไม่มีจะ start ใหม่):
+## 4) รันด้วย PM2 และทำให้รันต่อเนื่อง
 
 ```bash
 cd /home/automation-hub-sgp01/UpdateDailyGoldPrice
@@ -129,7 +84,7 @@ pm2 save
 pm2 ls
 ```
 
-ตั้ง autostart หลัง reboot (ครั้งแรกเท่านั้น):
+ตั้ง autostart (ครั้งแรก):
 
 ```bash
 pm2 startup
@@ -141,45 +96,38 @@ pm2 startup
 pm2 save
 ```
 
----
+## 5) ตั้ง Caddy Reverse Proxy
 
-## 6) ตั้ง Caddy (basic_auth + reverse proxy + token upstream)
-
-### 6.1 สร้าง hash password
+### 5.1 สร้างรหัส basic auth
 
 ```bash
-caddy hash-password --plaintext 'YOUR_REAL_PASSWORD'
+caddy hash-password --plaintext 'YOUR_PASSWORD'
 ```
 
-### 6.2 แก้ Caddyfile
+### 5.2 แก้ Caddyfile
 
 ```bash
 sudo nano /etc/caddy/Caddyfile
 ```
 
-ใส่ตัวอย่างนี้:
+ตัวอย่าง:
 
 ```caddy
 gold.example.com {
     basic_auth {
-        team01 $2a$14$PUT_HASH_FROM_CADDY_HERE
+        team01 $2a$14$PUT_HASH_HERE
     }
 
-    @writePaths path /api/layout /api/default-layout /api/template
+    @writePaths path /api/layout /api/default-layout /api/template /api/publish-wordpress
     reverse_proxy @writePaths 127.0.0.1:3210 {
-        header_up X-Write-Token "PASTE_SAME_TOKEN_AS_DOTENV"
+        header_up X-Write-Token "PASTE_SAME_AS_WRITE_API_TOKEN"
     }
 
     reverse_proxy 127.0.0.1:3210
 }
 ```
 
-หมายเหตุ:
-- `team01` คือ username
-- `$2a$14$...` คือ hash password
-- `X-Write-Token` ต้องตรงกับ `WRITE_API_TOKEN` ใน `.env` เป๊ะ
-
-### 6.3 format + validate + reload
+### 5.3 validate + reload
 
 ```bash
 sudo caddy fmt --overwrite /etc/caddy/Caddyfile
@@ -188,9 +136,7 @@ sudo systemctl reload caddy
 sudo systemctl status caddy --no-pager
 ```
 
----
-
-## 7) Firewall (ให้เข้าแอปผ่าน Caddy เท่านั้น)
+## 6) ตั้ง Firewall
 
 ```bash
 sudo ufw allow OpenSSH
@@ -199,49 +145,65 @@ sudo ufw deny 3210/tcp
 sudo ufw status
 ```
 
-ถ้ายังไม่เคยเปิด UFW:
+## 7) ติดตั้งปลั๊กอิน WordPress
 
-```bash
-sudo ufw enable
+ปลั๊กอินหลักในโปรเจกต์:
+
+- `wordpress-plugin/bizgital-gold-price-webhook/bizgital-gold-price-webhook.php`
+
+ติดตั้งได้ 2 แบบ:
+
+1. อัปโหลดโฟลเดอร์ไป `wp-content/plugins/bizgital-gold-price-webhook` แล้ว Activate
+2. zip แล้วอัปโหลดผ่าน `Plugins > Add New > Upload Plugin`
+
+## 8) เชื่อม Webhook กับ WordPress
+
+ใน WordPress:
+
+- ไป `Settings > Bizgital Gold Price`
+- ตั้ง `Webhook Secret` ให้ตรงกับ `WP_WEBHOOK_SECRET` ใน `.env`
+
+ยืนยัน endpoint:
+
+- `https://YOUR-WP-DOMAIN/wp-json/bizgital/v1/gold-price`
+
+## 9) วาง Shortcode ในหน้าเว็บ
+
+```text
+[bizgital_gold_price]
 ```
 
----
+หมายเหตุ:
 
-## 8) ตรวจสอบหลังติดตั้ง
+- การ์ดมีปุ่มสลับภาษาในตัว (`ລາວ` / `EN`)
+- ค่าเริ่มต้นเป็นภาษาลาว
 
-เช็ค PM2:
+## 10) ทดสอบ end-to-end
 
-```bash
-pm2 ls
-pm2 logs gold-price-editor --lines 50
-```
-
-เช็ค `.env`:
+ทดสอบ publish จากแอป:
 
 ```bash
 cd /home/automation-hub-sgp01/UpdateDailyGoldPrice
-grep -E '^(NODE_ENV|PORT|WRITE_API_TOKEN)=' .env
+WRITE_API_TOKEN="$(grep '^WRITE_API_TOKEN=' .env | cut -d= -f2-)" bash scripts/test-publish-houn.sh
 ```
 
-ทดสอบหน้าเว็บ:
-- เปิด `https://gold.example.com`
-- ต้องมี popup ให้ใส่ username/password
-- เข้าระบบแล้วลอง:
-  - บันทึก Layout
-  - บันทึก Default Layout
-  - อัปโหลด Template
+ถ้า `200 OK` แล้วให้รีเฟรชหน้า WordPress ที่มี shortcode
 
-ทดสอบความปลอดภัยเบื้องต้น:
+## 11) วิธีอัปเดตปลั๊กอินครั้งต่อไป
 
-```bash
-curl -i https://gold.example.com/.git/config
-```
+ไม่ต้องลบปลั๊กอินเดิม:
 
-คาดหวังผล: `404`
+1. อัปโหลดไฟล์/โฟลเดอร์ใหม่ทับของเดิม
+2. คงสถานะ Activated ไว้
+3. เคลียร์แคชหน้าเว็บ/ปลั๊กอิน/Cloudflare
+4. กด `Ctrl+F5`
 
----
+ถ้าไม่เห็นปุ่มภาษาใหม่:
 
-## 9) วิธีอัปเดตครั้งถัดไป (เส้นทางหลักที่ใช้ทุกครั้ง)
+- ยังใช้ไฟล์ปลั๊กอินเก่า หรือ
+- ติดแคช
+
+## 12) คำสั่งอัปเดตระบบในอนาคต
 
 ```bash
 cd /home/automation-hub-sgp01/UpdateDailyGoldPrice
@@ -251,42 +213,19 @@ pm2 restart gold-price-editor --update-env
 pm2 save
 ```
 
-ถ้าแก้ `.env` ต้องมี `--update-env` ทุกครั้ง
+## 13) Troubleshooting เร็ว
 
----
+1. `401 unauthorized`:
+- token ไม่ตรง (`WRITE_API_TOKEN` vs header ที่ Caddy ส่ง)
 
-## 10) Rollback แบบไม่ลบโฟลเดอร์
+2. `signature_mismatch`:
+- `WP_WEBHOOK_SECRET` ฝั่ง Node ไม่ตรงกับ WordPress setting
 
-ดู commit ล่าสุด:
+3. `invalid value: printSellFiveTamlueng`:
+- process ยังรันโค้ดเก่า ให้ `pm2 restart ... --update-env`
 
-```bash
-cd /home/automation-hub-sgp01/UpdateDailyGoldPrice
-git log --oneline -n 10
-```
+4. ช่อง 5 หุนเป็น `-`:
+- ยังไม่ได้ publish ค่าคีย์ใหม่ หรือปลั๊กอินเก่า
 
-ย้อนกลับไป commit ก่อนหน้า:
-
-```bash
-git checkout <COMMIT_SHA>
-npm install
-pm2 restart gold-price-editor --update-env
-pm2 save
-```
-
-เมื่อต้องการกลับมา branch หลัก:
-
-```bash
-git checkout main
-git pull origin main
-pm2 restart gold-price-editor --update-env
-pm2 save
-```
-
----
-
-## 11) หมายเหตุความปลอดภัย
-
-- ห้าม commit `.env` ขึ้น Git
-- ถ้ารั่วหรือสงสัยรั่ว ให้เปลี่ยน `WRITE_API_TOKEN` ทันที
-- เปลี่ยน password ใน `basic_auth` ได้โดยสร้าง hash ใหม่และ reload Caddy
-- ทีมใช้งานผ่านมือถือหลายเครือข่าย ควรใช้ `basic_auth` (ดีกว่าบังคับ IP คงที่)
+5. เวลาไม่ตรงไทย:
+- ตั้ง WordPress timezone เป็น `Asia/Bangkok`

@@ -1,14 +1,15 @@
 # Bizgital Update Daily Gold Price
 
-Web app for editing daily gold price data and publishing numeric values to a WordPress website via signed webhook.
+Web app for editing daily gold price data and publishing numeric values to WordPress via signed webhook.
 
 ## Overview
 
-- Backend: Node.js (`server.js`)
-- Frontend: `index.html` + `app.js` + `styles.css`
+- Backend: `server.js` (Node.js)
+- Frontend: `index.html`, `app.js`, `styles.css`
 - Storage: local files (`assets/`, `data/`)
-- Security: write-token protected API + static allowlist + body size limits
-- New integration: `Publish WordPress` button sends numeric payload to WordPress
+- Process manager: PM2
+- Reverse proxy: Caddy
+- WordPress integration: plugin + signed webhook + shortcode
 
 ## Environment
 
@@ -30,10 +31,11 @@ WP_WEBHOOK_TIMEOUT_MS=8000
 ```
 
 Notes:
-- When `NODE_ENV=production`, `WRITE_API_TOKEN` is required.
-- `WP_WEBHOOK_URL` + `WP_WEBHOOK_SECRET` are required only for publish-to-WordPress flow.
 
-## Run
+- `WRITE_API_TOKEN` is required in production.
+- `WP_WEBHOOK_URL` + `WP_WEBHOOK_SECRET` are required for publish-to-WordPress.
+
+## Run (Local)
 
 ```bash
 npm install
@@ -42,7 +44,7 @@ npm start
 
 Open: `http://127.0.0.1:3210`
 
-## Production
+## Production (PM2 + Caddy)
 
 PM2:
 
@@ -68,49 +70,66 @@ gold.example.com {
 }
 ```
 
-## WordPress integration (numeric webhook)
+## WordPress Integration
 
-### 1) Install plugin on WordPress
+### 1) Install plugin
 
-Plugin file in this repo:
+Use plugin file:
 
 - `wordpress-plugin/bizgital-gold-price-webhook/bizgital-gold-price-webhook.php`
 
-Install to WordPress:
+Install by one of these methods:
 
-1. Create directory `wp-content/plugins/bizgital-gold-price-webhook`
-2. Upload `bizgital-gold-price-webhook.php`
-3. Activate plugin in WordPress admin
+1. Upload folder to `wp-content/plugins/bizgital-gold-price-webhook` then Activate
+2. Zip the folder and upload via `Plugins > Add New > Upload Plugin`
 
-### 2) Configure shared secret
+### 2) Configure webhook secret in WordPress
 
-In WordPress Admin:
+In WP Admin:
 
-- `Settings` -> `Bizgital Gold Price`
-- Set `Webhook Secret` (must match `WP_WEBHOOK_SECRET` in this app)
+- `Settings > Bizgital Gold Price`
+- Set `Webhook Secret` to the same value as `WP_WEBHOOK_SECRET` in this app
 
-### 3) Publish from this app
+### 3) Configure app -> WordPress connection
 
-Use `Publish WordPress` button in the web app.
+Set in `.env`:
 
-The app sends signed payload to:
+- `WP_WEBHOOK_URL=https://<your-site>/wp-json/bizgital/v1/gold-price`
+- `WP_WEBHOOK_SECRET=<same-secret-as-wp-setting>`
 
-- `POST /wp-json/bizgital/v1/gold-price`
+Restart app:
 
-Signature headers:
+```bash
+pm2 restart gold-price-editor --update-env
+```
 
-- `X-Bizgital-Timestamp`
-- `X-Bizgital-Signature` (`sha256=<hmac>`)
+### 4) Display on website
 
-### 4) Show on website
-
-Use shortcode:
+Put shortcode in page/post:
 
 ```text
 [bizgital_gold_price]
 ```
 
-The plugin renders branded card UI and auto-switches labels for Lao/English by site locale.
+### 5) Language switch in component
+
+- Component has built-in language switch (`ລາວ` / `EN`)
+- Default is Lao
+- Does not rely on site locale anymore
+
+## Plugin Update Procedure (No uninstall needed)
+
+You can update plugin in-place (no need to delete old plugin first):
+
+1. Replace plugin file/folder with new version
+2. Keep plugin activated
+3. Hard refresh page (`Ctrl+F5`) and clear cache/CDN if used
+
+If UI does not change:
+
+- Verify updated file really reached server
+- Purge cache plugin and CDN
+- Confirm page uses `[bizgital_gold_price]`
 
 ## Payload shape sent to WordPress
 
@@ -133,8 +152,9 @@ The plugin renders branded card UI and auto-switches labels for Lao/English by s
 }
 ```
 
-## API endpoints (current)
+## API endpoints
 
+- `GET /health`
 - `GET /api/template`
 - `POST /api/template`
 - `GET /api/layout`
@@ -143,28 +163,34 @@ The plugin renders branded card UI and auto-switches labels for Lao/English by s
 - `POST /api/default-layout`
 - `POST /api/publish-wordpress`
 
-## Quick deploy + test scripts
-
-On Ubuntu server:
-
-```bash
-bash scripts/server-update-houn.sh
-```
-
-Test publish with new Houn keys:
-
-```bash
-WRITE_API_TOKEN="your-token" bash scripts/test-publish-houn.sh
-```
-
-On Windows PowerShell:
+## Quick test (PowerShell)
 
 ```powershell
 .\scripts\test-publish-houn.ps1 -Token "your-token"
 ```
 
-If you get `invalid value: printSellFiveTamlueng`, your running process is still old code.
-Run server update script, then restart PM2 with `--update-env`.
+## Quick test (Linux/macOS)
+
+```bash
+WRITE_API_TOKEN="your-token" bash scripts/test-publish-houn.sh
+```
+
+## Troubleshooting
+
+1. `401 unauthorized` on write API:
+- Check `WRITE_API_TOKEN`
+- Confirm Caddy sends correct `X-Write-Token`
+
+2. `signature_mismatch` on WordPress:
+- `WP_WEBHOOK_SECRET` does not match WP setting
+
+3. 5 Houn shows `-`:
+- Ensure latest app/plugin deployed
+- Republish once with latest payload keys
+
+4. Language toggle button not visible:
+- Old plugin file still active or cached
+- Replace plugin with latest file and clear cache
 
 ## Security behavior
 

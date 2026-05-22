@@ -166,13 +166,45 @@ If UI does not change:
 ## Quick test (PowerShell)
 
 ```powershell
-.\scripts\test-publish-houn.ps1 -Token "your-token"
+$token = "your-token"
+$payload = @{
+  date = "21/05/2026"
+  time = "11:59"
+  barSellOneBaht = "55,200,000"
+  barBuyOneBaht = "54,670,000"
+  printSellOneBaht = "55,300,000"
+  printBuyOneBaht = "53,890,000"
+  printSellOneSalueng = "13,825,000"
+  printBuyOneSalueng = "13,473,000"
+  printSellFiveHoun = "6,912,000"
+  printBuyFiveHoun = "6,737,000"
+} | ConvertTo-Json -Compress
+
+curl.exe -i -X POST "http://127.0.0.1:3210/api/publish-wordpress" `
+  -H "Content-Type: application/json" `
+  -H "X-Write-Token: $token" `
+  --data-raw $payload
 ```
 
 ## Quick test (Linux/macOS)
 
 ```bash
-WRITE_API_TOKEN="your-token" bash scripts/test-publish-houn.sh
+WRITE_API_TOKEN="your-token"
+curl -i -X POST "http://127.0.0.1:3210/api/publish-wordpress" \
+  -H "Content-Type: application/json" \
+  -H "X-Write-Token: ${WRITE_API_TOKEN}" \
+  --data-raw '{
+    "date":"21/05/2026",
+    "time":"11:59",
+    "barSellOneBaht":"55,200,000",
+    "barBuyOneBaht":"54,670,000",
+    "printSellOneBaht":"55,300,000",
+    "printBuyOneBaht":"53,890,000",
+    "printSellOneSalueng":"13,825,000",
+    "printBuyOneSalueng":"13,473,000",
+    "printSellFiveHoun":"6,912,000",
+    "printBuyFiveHoun":"6,737,000"
+  }'
 ```
 
 ## Troubleshooting

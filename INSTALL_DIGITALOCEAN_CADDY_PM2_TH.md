@@ -184,7 +184,22 @@ sudo ufw status
 
 ```bash
 cd /home/automation-hub-sgp01/UpdateDailyGoldPrice
-WRITE_API_TOKEN="$(grep '^WRITE_API_TOKEN=' .env | cut -d= -f2-)" bash scripts/test-publish-houn.sh
+WRITE_API_TOKEN="$(grep '^WRITE_API_TOKEN=' .env | cut -d= -f2-)"
+curl -i -X POST "http://127.0.0.1:3210/api/publish-wordpress" \
+  -H "Content-Type: application/json" \
+  -H "X-Write-Token: ${WRITE_API_TOKEN}" \
+  --data-raw '{
+    "date":"21/05/2026",
+    "time":"11:59",
+    "barSellOneBaht":"55,200,000",
+    "barBuyOneBaht":"54,670,000",
+    "printSellOneBaht":"55,300,000",
+    "printBuyOneBaht":"53,890,000",
+    "printSellOneSalueng":"13,825,000",
+    "printBuyOneSalueng":"13,473,000",
+    "printSellFiveHoun":"6,912,000",
+    "printBuyFiveHoun":"6,737,000"
+  }'
 ```
 
 ถ้า `200 OK` แล้วให้รีเฟรชหน้า WordPress ที่มี shortcode

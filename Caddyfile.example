@@ -1,0 +1,65 @@
+# Caddyfile.example — Production template
+# ---
+# Setup steps:
+#   1. Copy this file to "Caddyfile" (gitignored — see .gitignore)
+#   2. Replace YOUR_DOMAIN with your real domain.
+#      Caddy automatically provisions a Let's Encrypt TLS certificate.
+#   3. Generate a bcrypt hash for the admin UI password:
+#        caddy hash-password --plaintext "your-admin-password"
+#      Paste the output in place of YOUR_BCRYPT_HASH below.
+#   4. Export the write token before starting Caddy so it is available as an env var:
+#        export WRITE_API_TOKEN="$(cat /etc/gold-price/write-token)"
+#   5. Start / reload:
+#        caddy start --config Caddyfile          # first time
+#        caddy reload --config Caddyfile         # after edits
+
+YOUR_DOMAIN {
+
+    # ── Public: display page + its static assets ─────────────────────────
+    # The TV / kiosk display page polls these endpoints without authentication.
+
+    @publicStatic path /display /display/ /display.js /display.css
+    handle @publicStatic {
+        reverse_proxy localhost:3210
+    }
+
+    @publicFonts path /assets/fonts/*
+    handle @publicFonts {
+        reverse_proxy localhost:3210
+    }
+
+    # Read-only API calls used by the public display (GET only)
+    @publicApiReads {
+        method GET
+        path /api/display-data /api/layout /api/default-layout /api/template
+    }
+    handle @publicApiReads {
+        reverse_proxy localhost:3210
+    }
+
+    handle /health {
+        reverse_proxy localhost:3210
+    }
+
+    # ── Admin UI + write API: require basic authentication ────────────────
+    # Everything not matched above lands here.
+    # Generate hash: caddy hash-password --plaintext "your-admin-password"
+    handle {
+        basicauth {
+            admin YOUR_BCRYPT_HASH
+        }
+
+        # Inject the write token for all API mutations.
+        # The admin UI never has to know or type the token — Caddy adds it
+        # transparently, so the server can still do constant-time token checks.
+        @writeMutations {
+            method POST
+            path /api/*
+        }
+        reverse_proxy @writeMutations localhost:3210 {
+            header_up X-Write-Token {env.WRITE_API_TOKEN}
+        }
+
+        reverse_proxy localhost:3210
+    }
+}

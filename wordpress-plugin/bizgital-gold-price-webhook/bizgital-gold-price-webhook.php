@@ -280,9 +280,78 @@ function bizgital_gold_price_js()
         });
     }
 
+    function formatNumber(value) {
+        var n = Number(value);
+        if (!Number.isFinite(n)) return "-";
+        return n.toLocaleString("en-US", { maximumFractionDigits: 0 });
+    }
+
+    function setTextForAll(card, selector, text) {
+        card.querySelectorAll(selector).forEach(function (el) {
+            el.textContent = text;
+        });
+    }
+
+    function refreshCardData(card) {
+        var endpoint = card.getAttribute("data-endpoint");
+        if (!endpoint) return Promise.resolve();
+
+        var url = endpoint + (endpoint.indexOf("?") === -1 ? "?" : "&") + "_t=" + Date.now();
+        return fetch(url, {
+            method: "GET",
+            cache: "no-store",
+            credentials: "same-origin",
+            headers: {
+                "Cache-Control": "no-cache",
+                "Pragma": "no-cache"
+            }
+        }).then(function (resp) {
+            if (!resp.ok) {
+                throw new Error("HTTP " + resp.status);
+            }
+            return resp.json();
+        }).then(function (data) {
+            if (!data || data.ok !== true || !data.data || !data.data.values) {
+                return;
+            }
+
+            var payload = data.data;
+            var values = payload.values || {};
+
+            setTextForAll(card, "[data-bgp-date]", payload.date || "-");
+            setTextForAll(card, "[data-bgp-time]", payload.time || "-");
+            setTextForAll(card, "[data-bgp-updated]", payload.updated_at || "-");
+
+            card.querySelectorAll("[data-bgp-key]").forEach(function (el) {
+                var key = el.getAttribute("data-bgp-key");
+                var value = values[key];
+                el.textContent = formatNumber(value);
+            });
+        }).catch(function (error) {
+            console.warn("Gold price refresh failed:", error && error.message ? error.message : error);
+        });
+    }
+
+    function setupLiveRefresh(card) {
+        if (card.getAttribute("data-live-init") === "1") {
+            return;
+        }
+        card.setAttribute("data-live-init", "1");
+        refreshCardData(card);
+
+        var refreshMs = Number(card.getAttribute("data-refresh-ms") || "15000");
+        if (!Number.isFinite(refreshMs) || refreshMs < 5000) {
+            refreshMs = 15000;
+        }
+        setInterval(function () {
+            refreshCardData(card);
+        }, refreshMs);
+    }
+
     function initAll() {
         document.querySelectorAll(".bizgital-gold-card[data-lang]").forEach(function (card) {
             applyLang(card, card.getAttribute("data-lang") || "lo");
+            setupLiveRefresh(card);
         });
     }
 
@@ -301,6 +370,13 @@ function bizgital_gold_price_js()
         if (lang !== "lo" && lang !== "en") return;
         applyLang(card, lang);
     });
+
+    document.addEventListener("visibilitychange", function () {
+        if (document.visibilityState !== "visible") return;
+        document.querySelectorAll(".bizgital-gold-card[data-endpoint]").forEach(function (card) {
+            refreshCardData(card);
+        });
+    });
 }());
 ';
 }
@@ -313,6 +389,11 @@ add_action('rest_api_init', function () {
     register_rest_route('bizgital/v1', '/gold-price', [
         'methods'             => 'POST',
         'callback'            => 'bizgital_gold_price_receive_webhook',
+        'permission_callback' => '__return_true',
+    ]);
+    register_rest_route('bizgital/v1', '/gold-price-latest', [
+        'methods'             => 'GET',
+        'callback'            => 'bizgital_gold_price_get_latest',
         'permission_callback' => '__return_true',
     ]);
 });
@@ -357,17 +438,17 @@ add_shortcode('bizgital_gold_price', function () {
     $updatedAt   = (int) get_option(BIZGITAL_GOLD_PRICE_UPDATED_AT_OPTION, 0);
     $updatedText = $updatedAt > 0 ? wp_date('Y-m-d H:i', $updatedAt) : '-';
 
-    $row = function ($labelLo, $labelEn, $value, $type = 'sell') {
+    $row = function ($labelLo, $labelEn, $value, $key, $type = 'sell') {
         $number = is_numeric($value) ? number_format((float) $value, 0, '.', ',') : '-';
         return sprintf(
             '<div class="bgp-row bgp-row--%4$s">'
             . '<span class="bgp-row__label"><span class="lang-lo">%1$s</span><span class="lang-en">%2$s</span></span>'
             . '<span class="bgp-row__price">'
-            .   '<span class="bgp-row__number">%3$s</span>'
+            .   '<span class="bgp-row__number" data-bgp-key="%5$s">%3$s</span>'
             .   '<span class="bgp-row__unit"><span class="lang-lo">ກີບ</span><span class="lang-en">LAK</span></span>'
             . '</span>'
             . '</div>',
-            esc_html($labelLo), esc_html($labelEn), esc_html($number), esc_attr($type)
+            esc_html($labelLo), esc_html($labelEn), esc_html($number), esc_attr($type), esc_attr($key)
         );
     };
 
@@ -384,7 +465,8 @@ add_shortcode('bizgital_gold_price', function () {
         );
     };
 
-    $html  = '<div class="bizgital-gold-card" data-lang="lo">';
+    $latestEndpoint = esc_url(rest_url('bizgital/v1/gold-price-latest'));
+    $html  = '<div class="bizgital-gold-card" data-lang="lo" data-endpoint="' . $latestEndpoint . '" data-refresh-ms="15000">';
 
     // Header row: title (left) + language toggle (right)
     $html .= '<div class="bgp-header">';
@@ -405,9 +487,9 @@ add_shortcode('bizgital_gold_price', function () {
     $html .= sprintf(
         '<div class="bgp-datetime">'
         . '<div class="bgp-datetime-pill">'
-        .   '<span><span class="lang-lo">ວັນທີ: %1$s</span><span class="lang-en">Date: %1$s</span></span>'
+        .   '<span><span class="lang-lo">ວັນທີ: <span data-bgp-date>%1$s</span></span><span class="lang-en">Date: <span data-bgp-date>%1$s</span></span></span>'
         .   '<span class="bgp-datetime-sep" aria-hidden="true">·</span>'
-        .   '<span><span class="lang-lo">ເວລາ: %2$s</span><span class="lang-en">Time: %2$s</span></span>'
+        .   '<span><span class="lang-lo">ເວລາ: <span data-bgp-time>%2$s</span></span><span class="lang-en">Time: <span data-bgp-time>%2$s</span></span></span>'
         . '</div>'
         . '</div>',
         esc_html($date), esc_html($time)
@@ -417,28 +499,28 @@ add_shortcode('bizgital_gold_price', function () {
     $html .= '<section class="bgp-section">';
     $html .= $sec('ລາຄາຄຳແທ່ງ', 'Gold Bar');
     $html .= '<div class="bgp-price-list">';
-    $html .= $row('ລາຄາຂາຍ 1 ບາດ', 'Sell Price (1 Baht)', $values['bar_sell_one_baht'] ?? null, 'sell');
-    $html .= $row('ລາຄາຊື້ 1 ບາດ',  'Buy Price (1 Baht)',  $values['bar_buy_one_baht']  ?? null, 'buy');
+    $html .= $row('ລາຄາຂາຍ 1 ບາດ', 'Sell Price (1 Baht)', $values['bar_sell_one_baht'] ?? null, 'bar_sell_one_baht', 'sell');
+    $html .= $row('ລາຄາຊື້ 1 ບາດ',  'Buy Price (1 Baht)',  $values['bar_buy_one_baht']  ?? null, 'bar_buy_one_baht', 'buy');
     $html .= '</div></section>';
 
     // Gold Ornament
     $html .= '<section class="bgp-section">';
     $html .= $sec('ລາຄາຄຳຮູບປະພັນ', 'Gold Ornament');
     $html .= '<div class="bgp-price-list">';
-    $html .= $row('ລາຄາຂາຍ 1 ບາດ',    'Sell Price (1 Baht)',    $values['print_sell_one_baht']    ?? null, 'sell');
-    $html .= $row('ລາຄາຊື້ 1 ບາດ',     'Buy Price (1 Baht)',     $values['print_buy_one_baht']     ?? null, 'buy');
+    $html .= $row('ລາຄາຂາຍ 1 ບາດ',    'Sell Price (1 Baht)',    $values['print_sell_one_baht']    ?? null, 'print_sell_one_baht', 'sell');
+    $html .= $row('ລາຄາຊື້ 1 ບາດ',     'Buy Price (1 Baht)',     $values['print_buy_one_baht']     ?? null, 'print_buy_one_baht', 'buy');
     $html .= '<hr class="bgp-group-sep" aria-hidden="true">';
-    $html .= $row('ລາຄາຂາຍ 1 ສະຫຼຶງ', 'Sell Price (1 Salueng)', $values['print_sell_one_salueng'] ?? null, 'sell');
-    $html .= $row('ລາຄາຊື້ 1 ສະຫຼຶງ',  'Buy Price (1 Salueng)',  $values['print_buy_one_salueng']  ?? null, 'buy');
+    $html .= $row('ລາຄາຂາຍ 1 ສະຫຼຶງ', 'Sell Price (1 Salueng)', $values['print_sell_one_salueng'] ?? null, 'print_sell_one_salueng', 'sell');
+    $html .= $row('ລາຄາຊື້ 1 ສະຫຼຶງ',  'Buy Price (1 Salueng)',  $values['print_buy_one_salueng']  ?? null, 'print_buy_one_salueng', 'buy');
     $html .= '<hr class="bgp-group-sep" aria-hidden="true">';
-    $html .= $row('ລາຄາຂາຍ 5 ຫຸນ',    'Sell Price (5 Houn)',    $values['print_sell_five_houn']   ?? null, 'sell');
-    $html .= $row('ລາຄາຊື້ 5 ຫຸນ',     'Buy Price (5 Houn)',     $values['print_buy_five_houn']    ?? null, 'buy');
+    $html .= $row('ລາຄາຂາຍ 5 ຫຸນ',    'Sell Price (5 Houn)',    $values['print_sell_five_houn']   ?? null, 'print_sell_five_houn', 'sell');
+    $html .= $row('ລາຄາຊື້ 5 ຫຸນ',     'Buy Price (5 Houn)',     $values['print_buy_five_houn']    ?? null, 'print_buy_five_houn', 'buy');
     $html .= '</div></section>';
 
     $html .= sprintf(
         '<p class="bgp-updated">'
-        . '<span class="lang-lo">ອັບເດດ: %s</span>'
-        . '<span class="lang-en">Updated: %s</span>'
+        . '<span class="lang-lo">ອັບເດດ: <span data-bgp-updated>%s</span></span>'
+        . '<span class="lang-en">Updated: <span data-bgp-updated>%s</span></span>'
         . '</p>',
         esc_html($updatedText), esc_html($updatedText)
     );
@@ -451,12 +533,68 @@ add_shortcode('bizgital_gold_price', function () {
    Webhook handler
    ================================================================ */
 
+function bizgital_gold_price_value_keys()
+{
+    return [
+        'bar_sell_one_baht', 'bar_buy_one_baht',
+        'print_sell_one_baht', 'print_buy_one_baht',
+        'print_sell_one_salueng', 'print_buy_one_salueng',
+        'print_sell_five_houn', 'print_buy_five_houn',
+    ];
+}
+
 function bizgital_gold_price_get_secret()
 {
     if (defined('BIZGITAL_GOLD_PRICE_SECRET') && BIZGITAL_GOLD_PRICE_SECRET) {
         return (string) BIZGITAL_GOLD_PRICE_SECRET;
     }
     return (string) get_option(BIZGITAL_GOLD_PRICE_SECRET_OPTION, '');
+}
+
+function bizgital_gold_price_read_current_payload()
+{
+    $payload = get_option(BIZGITAL_GOLD_PRICE_DATA_OPTION);
+    if (!is_array($payload) || !isset($payload['values']) || !is_array($payload['values'])) {
+        return null;
+    }
+
+    $values = $payload['values'];
+    if (!array_key_exists('print_sell_five_houn', $values) && array_key_exists('print_sell_five_tamlueng', $values)) {
+        $values['print_sell_five_houn'] = $values['print_sell_five_tamlueng'];
+    }
+    if (!array_key_exists('print_buy_five_houn', $values) && array_key_exists('print_buy_five_tamlueng', $values)) {
+        $values['print_buy_five_houn'] = $values['print_buy_five_tamlueng'];
+    }
+
+    $cleanValues = [];
+    foreach (bizgital_gold_price_value_keys() as $key) {
+        $raw = $values[$key] ?? null;
+        $cleanValues[$key] = is_numeric($raw) ? (float) $raw : null;
+    }
+
+    $updatedAt = (int) get_option(BIZGITAL_GOLD_PRICE_UPDATED_AT_OPTION, 0);
+    return [
+        'date'            => isset($payload['date']) ? (string) $payload['date'] : '-',
+        'time'            => isset($payload['time']) ? (string) $payload['time'] : '-',
+        'values'          => $cleanValues,
+        'updated_at'      => $updatedAt > 0 ? wp_date('Y-m-d H:i:s T', $updatedAt) : '-',
+        'updated_at_unix' => $updatedAt,
+    ];
+}
+
+function bizgital_gold_price_get_latest(WP_REST_Request $request)
+{
+    unset($request);
+    $data = bizgital_gold_price_read_current_payload();
+    if (!$data) {
+        $response = new WP_REST_Response(['ok' => false, 'error' => 'gold_price_not_available'], 404);
+    } else {
+        $response = new WP_REST_Response(['ok' => true, 'data' => $data], 200);
+    }
+    $response->header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+    $response->header('Pragma', 'no-cache');
+    $response->header('Expires', '0');
+    return $response;
 }
 
 function bizgital_gold_price_receive_webhook(WP_REST_Request $request)
@@ -493,12 +631,7 @@ function bizgital_gold_price_receive_webhook(WP_REST_Request $request)
         return new WP_REST_Response(['ok' => false, 'error' => 'invalid_payload'], 400);
     }
 
-    $requiredKeys = [
-        'bar_sell_one_baht', 'bar_buy_one_baht',
-        'print_sell_one_baht', 'print_buy_one_baht',
-        'print_sell_one_salueng', 'print_buy_one_salueng',
-        'print_sell_five_houn', 'print_buy_five_houn',
-    ];
+    $requiredKeys = bizgital_gold_price_value_keys();
 
     // Backward compatibility: accept legacy tamlueng keys and normalize to houn keys.
     if (!array_key_exists('print_sell_five_houn', $payload['values']) && array_key_exists('print_sell_five_tamlueng', $payload['values'])) {
@@ -527,8 +660,42 @@ function bizgital_gold_price_receive_webhook(WP_REST_Request $request)
 
     update_option(BIZGITAL_GOLD_PRICE_DATA_OPTION, $cleanPayload, false);
     update_option(BIZGITAL_GOLD_PRICE_UPDATED_AT_OPTION, time(), false);
+    bizgital_gold_price_purge_page_caches();
 
     return new WP_REST_Response(['ok' => true], 200);
+}
+
+function bizgital_gold_price_purge_page_caches()
+{
+    try {
+        do_action('litespeed_purge_all');
+    } catch (Throwable $e) {
+        error_log('Bizgital Gold Price purge error (LiteSpeed): ' . $e->getMessage());
+    }
+
+    try {
+        if (function_exists('rocket_clean_domain')) {
+            rocket_clean_domain();
+        }
+    } catch (Throwable $e) {
+        error_log('Bizgital Gold Price purge error (WP Rocket): ' . $e->getMessage());
+    }
+
+    try {
+        if (function_exists('sg_cachepress_purge_cache')) {
+            sg_cachepress_purge_cache();
+        }
+    } catch (Throwable $e) {
+        error_log('Bizgital Gold Price purge error (SiteGround): ' . $e->getMessage());
+    }
+
+    try {
+        if (function_exists('w3tc_flush_all')) {
+            w3tc_flush_all();
+        }
+    } catch (Throwable $e) {
+        error_log('Bizgital Gold Price purge error (W3 Total Cache): ' . $e->getMessage());
+    }
 }
 
 function bizgital_gold_price_render_settings_page()

@@ -125,6 +125,13 @@ Put shortcode in page/post:
 [bizgital_gold_price]
 ```
 
+Live update behavior:
+
+- Plugin now auto-fetches latest values from `GET /wp-json/bizgital/v1/gold-price-latest`
+- Fetch uses no-cache headers and cache-busting query params
+- After webhook save, plugin attempts cache purge hooks (LiteSpeed/WP Rocket/SiteGround/W3TC)
+- If you still see old values, purge CDN cache (e.g., Cloudflare) once
+
 ### 5) Language switch in component
 
 - Component has built-in language switch (`ລາວ` / `EN`)

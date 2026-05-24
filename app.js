@@ -52,9 +52,15 @@ const templateFileInput = document.getElementById("templateFileInput");
 const saveLayoutButton = document.getElementById("saveLayoutButton");
 const saveDefaultButton = document.getElementById("saveDefaultButton");
 const resetLayoutButton = document.getElementById("resetLayoutButton");
+const openDisplayButton = document.getElementById("openDisplayButton");
+const updateDisplayButton = document.getElementById("updateDisplayButton");
 const publishWordpressButton = document.getElementById("publishWordpressButton");
 const exportButton = document.getElementById("exportButton");
 const statusText = document.getElementById("statusText");
+const writeApiTokenInput = document.getElementById("writeApiTokenInput");
+const writeApiTokenField = document.getElementById("writeApiTokenField");
+
+const LOCAL_TOKEN_STORAGE_KEY = "gold_price_write_api_token";
 
 let builtInTemplate = null;
 let layout = structuredClone(DEFAULT_LAYOUT);
@@ -62,6 +68,31 @@ let defaultLayout = structuredClone(DEFAULT_LAYOUT);
 let dragState = null;
 let dragRaf = null;
 let resizeRaf = null;
+
+function getWriteApiToken() {
+  return (writeApiTokenInput?.value || "").trim();
+}
+
+function getJsonHeadersWithOptionalWriteToken() {
+  const headers = { "Content-Type": "application/json" };
+  const token = getWriteApiToken();
+  if (token) {
+    headers["X-Write-Token"] = token;
+  }
+  return headers;
+}
+
+async function loadPublicConfig() {
+  try {
+    const response = await fetch("/api/public-config", { cache: "no-store" });
+    if (!response.ok) {
+      return null;
+    }
+    return await response.json();
+  } catch (_error) {
+    return null;
+  }
+}
 
 async function ensureLaoFontsLoaded() {
   if (!document.fonts) {
@@ -366,7 +397,7 @@ async function saveLayout() {
   try {
     const response = await fetch("/api/layout", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: getJsonHeadersWithOptionalWriteToken(),
       body: JSON.stringify(layout),
     });
     if (!response.ok) {
@@ -383,12 +414,12 @@ async function saveDefaultLayout() {
     const [defaultResponse, layoutResponse] = await Promise.all([
       fetch("/api/default-layout", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: getJsonHeadersWithOptionalWriteToken(),
         body: JSON.stringify(layout),
       }),
       fetch("/api/layout", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: getJsonHeadersWithOptionalWriteToken(),
         body: JSON.stringify(layout),
       }),
     ]);
@@ -487,7 +518,7 @@ async function uploadTemplate(file) {
   try {
     response = await fetch("/api/template", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: getJsonHeadersWithOptionalWriteToken(),
       body: JSON.stringify({ filename: file.name, dataUrl }),
     });
   } catch (_error) {
@@ -508,7 +539,7 @@ async function publishToWordpress() {
   try {
     response = await fetch("/api/publish-wordpress", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: getJsonHeadersWithOptionalWriteToken(),
       body: JSON.stringify(payload),
     });
   } catch (_error) {
@@ -525,6 +556,34 @@ async function publishToWordpress() {
   if (!response.ok) {
     const reason = body?.error ? `${response.status}:${body.error}` : String(response.status);
     throw new Error(`publish_http_${reason}`);
+  }
+
+  return body || { ok: true };
+}
+
+async function updatePublicDisplayData() {
+  const payload = getPosterData();
+  let response;
+  try {
+    response = await fetch("/api/display-data", {
+      method: "POST",
+      headers: getJsonHeadersWithOptionalWriteToken(),
+      body: JSON.stringify(payload),
+    });
+  } catch (_error) {
+    throw new Error("display_server_unreachable");
+  }
+
+  let body = null;
+  try {
+    body = await response.json();
+  } catch (_error) {
+    body = null;
+  }
+
+  if (!response.ok) {
+    const reason = body?.error ? `${response.status}:${body.error}` : String(response.status);
+    throw new Error(`display_http_${reason}`);
   }
 
   return body || { ok: true };
@@ -593,10 +652,27 @@ function getTemplateErrorMessage(error) {
   if (error?.message?.startsWith("publish_http_")) {
     return `ສົ່ງໄປ WordPress ບໍ່ສຳເລັດ (${error.message.replace("publish_http_", "")})`;
   }
+  if (error?.message === "display_server_unreachable") {
+    return "ອັບເດດ Public Display ບໍ່ໄດ້ (server unreachable)";
+  }
+  if (error?.message?.startsWith("display_http_")) {
+    return `ອັບເດດ Public Display ບໍ່ສຳເລັດ (${error.message.replace("display_http_", "")})`;
+  }
   return error?.message || "ບໍ່ຮູ້ສາເຫດ";
 }
 
 async function bootstrap() {
+  const publicConfig = await loadPublicConfig();
+  const showLocalTokenInput = publicConfig?.showLocalTokenInput !== false;
+  if (writeApiTokenField) {
+    writeApiTokenField.style.display = showLocalTokenInput ? "" : "none";
+  }
+
+  const savedToken = localStorage.getItem(LOCAL_TOKEN_STORAGE_KEY);
+  if (showLocalTokenInput && savedToken && writeApiTokenInput) {
+    writeApiTokenInput.value = savedToken;
+  }
+
   initializeDateTimeInputs();
   await ensureLaoFontsLoaded();
   await Promise.all([loadDefaultLayout(), loadLayout()]);
@@ -663,6 +739,25 @@ publishWordpressButton.addEventListener("click", async () => {
   }
 });
 
+openDisplayButton.addEventListener("click", () => {
+  const displayUrl = `${window.location.origin}/display`;
+  window.open(displayUrl, "_blank", "noopener,noreferrer");
+});
+
+updateDisplayButton.addEventListener("click", async () => {
+  try {
+    updateDisplayButton.disabled = true;
+    statusText.textContent = "ກຳລັງອັບເດດ Public Display...";
+    await updatePublicDisplayData();
+    const displayUrl = `${window.location.origin}/display`;
+    statusText.textContent = `ອັບເດດ Public Display ສຳເລັດ: ${displayUrl}`;
+  } catch (error) {
+    statusText.textContent = getTemplateErrorMessage(error);
+  } finally {
+    updateDisplayButton.disabled = false;
+  }
+});
+
 templateFileInput.addEventListener("change", async (event) => {
   const [file] = event.target.files || [];
   if (!file) {
@@ -686,6 +781,17 @@ Object.values(fields).forEach((input) => {
     renderAll();
   });
 });
+
+if (writeApiTokenInput) {
+  writeApiTokenInput.addEventListener("input", () => {
+    const token = getWriteApiToken();
+    if (token) {
+      localStorage.setItem(LOCAL_TOKEN_STORAGE_KEY, token);
+    } else {
+      localStorage.removeItem(LOCAL_TOKEN_STORAGE_KEY);
+    }
+  });
+}
 
 previewOverlay.addEventListener("pointerdown", handleOverlayPointerDown);
 window.addEventListener("resize", () => {

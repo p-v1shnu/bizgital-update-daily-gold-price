@@ -25,6 +25,10 @@ Example:
 NODE_ENV=production
 PORT=3210
 WRITE_API_TOKEN=replace-with-a-long-random-token
+SHOW_LOCAL_TOKEN_INPUT=false
+RATE_LIMIT_API_EVENTS=240
+RATE_LIMIT_DISPLAY_EVENTS=180
+RATE_LIMIT_WRITE_EVENTS=30
 WP_WEBHOOK_URL=https://client-site.example/wp-json/bizgital/v1/gold-price
 WP_WEBHOOK_SECRET=replace-with-wordpress-shared-secret
 WP_WEBHOOK_TIMEOUT_MS=8000
@@ -33,6 +37,7 @@ WP_WEBHOOK_TIMEOUT_MS=8000
 Notes:
 
 - `WRITE_API_TOKEN` is required in production.
+- `SHOW_LOCAL_TOKEN_INPUT=false` hides the local token field in production UI.
 - `WP_WEBHOOK_URL` + `WP_WEBHOOK_SECRET` are required for publish-to-WordPress.
 
 ## Run (Local)
@@ -57,11 +62,15 @@ Caddy example:
 
 ```caddy
 gold.example.com {
-    basic_auth {
+    @admin path / /app.js /styles.css /api/layout /api/default-layout /api/template /api/publish-wordpress /api/display-data /api/public-config
+    basic_auth @admin {
         team01 $2a$14$PUT_HASH_HERE
     }
 
-    @writePaths path /api/layout /api/default-layout /api/template /api/publish-wordpress
+    # Public display routes (no basic auth)
+    @publicDisplay path /display /display/ /display.js /api/display-data /api/template /api/layout /api/default-layout /assets/fonts/*
+
+    @writePaths path /api/layout /api/default-layout /api/template /api/publish-wordpress /api/display-data
     reverse_proxy @writePaths 127.0.0.1:3210 {
         header_up X-Write-Token "SAME_VALUE_AS_WRITE_API_TOKEN"
     }
@@ -69,6 +78,11 @@ gold.example.com {
     reverse_proxy 127.0.0.1:3210
 }
 ```
+
+Important:
+
+- Rotate real secrets before production (never use placeholder values).
+- Keep `/display` public, but keep admin/editor endpoints behind `basic_auth`.
 
 ## WordPress Integration
 
@@ -117,6 +131,13 @@ Put shortcode in page/post:
 - Default is Lao
 - Does not rely on site locale anymore
 
+## Public display link (same link, auto refresh)
+
+- Public link: `/display`
+- Example: `https://gold.example.com/display`
+- In editor page, click `ອັບເດດ Public Display` after changing prices
+- The display page polls latest data and refreshes automatically on the same URL
+
 ## Plugin Update Procedure (No uninstall needed)
 
 You can update plugin in-place (no need to delete old plugin first):
@@ -162,6 +183,8 @@ If UI does not change:
 - `GET /api/default-layout`
 - `POST /api/default-layout`
 - `POST /api/publish-wordpress`
+- `GET /api/display-data`
+- `POST /api/display-data`
 
 ## Quick test (PowerShell)
 
@@ -233,3 +256,4 @@ curl -i -X POST "http://127.0.0.1:3210/api/publish-wordpress" \
 - layout/default-layout: 256KB
 - publish payload: 64KB
 4. No stack traces returned to clients on 500 errors
+5. Built-in API rate limiting (per IP, per route class) for basic DoS protection

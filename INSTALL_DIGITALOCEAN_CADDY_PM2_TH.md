@@ -64,6 +64,10 @@ nano .env
 NODE_ENV=production
 PORT=3210
 WRITE_API_TOKEN=PASTE_RANDOM_TOKEN
+SHOW_LOCAL_TOKEN_INPUT=false
+RATE_LIMIT_API_EVENTS=240
+RATE_LIMIT_DISPLAY_EVENTS=180
+RATE_LIMIT_WRITE_EVENTS=30
 WP_WEBHOOK_URL=https://YOUR-WP-DOMAIN/wp-json/bizgital/v1/gold-price
 WP_WEBHOOK_SECRET=PASTE_RANDOM_SECRET
 WP_WEBHOOK_TIMEOUT_MS=8000
@@ -114,11 +118,12 @@ sudo nano /etc/caddy/Caddyfile
 
 ```caddy
 gold.example.com {
-    basic_auth {
+    @admin path / /app.js /styles.css /api/layout /api/default-layout /api/template /api/publish-wordpress /api/display-data /api/public-config
+    basic_auth @admin {
         team01 $2a$14$PUT_HASH_HERE
     }
 
-    @writePaths path /api/layout /api/default-layout /api/template /api/publish-wordpress
+    @writePaths path /api/layout /api/default-layout /api/template /api/publish-wordpress /api/display-data
     reverse_proxy @writePaths 127.0.0.1:3210 {
         header_up X-Write-Token "PASTE_SAME_AS_WRITE_API_TOKEN"
     }
@@ -126,6 +131,12 @@ gold.example.com {
     reverse_proxy 127.0.0.1:3210
 }
 ```
+
+หมายเหตุสำคัญ:
+
+- อย่าใช้ token/secret แบบตัวอย่าง ให้สุ่มใหม่เสมอ
+- เส้นทาง `/display` จะเป็น public สำหรับหน้าจอแสดงผล
+- เส้นทาง admin/editor และ write API จะอยู่หลัง `basic_auth`
 
 ### 5.3 validate + reload
 
@@ -178,7 +189,14 @@ sudo ufw status
 - การ์ดมีปุ่มสลับภาษาในตัว (`ລາວ` / `EN`)
 - ค่าเริ่มต้นเป็นภาษาลาว
 
-## 10) ทดสอบ end-to-end
+## 10) ลิงก์ public สำหรับแสดงราคาปัจจุบัน
+
+- ลิงก์ใช้งาน: `https://YOUR-DOMAIN/display`
+- เปิดลิงก์นี้ค้างไว้ใน browser ของหน้าจอแนวตั้งได้เลย
+- เวลาแก้ราคาในหน้า editor ให้กดปุ่ม `ອັບເດດ Public Display`
+- หน้า `/display` จะดึงข้อมูลล่าสุดและรีเฟรชอัตโนมัติบนลิงก์เดิม
+
+## 11) ทดสอบ end-to-end
 
 ทดสอบ publish จากแอป:
 
@@ -204,7 +222,7 @@ curl -i -X POST "http://127.0.0.1:3210/api/publish-wordpress" \
 
 ถ้า `200 OK` แล้วให้รีเฟรชหน้า WordPress ที่มี shortcode
 
-## 11) วิธีอัปเดตปลั๊กอินครั้งต่อไป
+## 12) วิธีอัปเดตปลั๊กอินครั้งต่อไป
 
 ไม่ต้องลบปลั๊กอินเดิม:
 
@@ -218,7 +236,7 @@ curl -i -X POST "http://127.0.0.1:3210/api/publish-wordpress" \
 - ยังใช้ไฟล์ปลั๊กอินเก่า หรือ
 - ติดแคช
 
-## 12) คำสั่งอัปเดตระบบในอนาคต
+## 13) คำสั่งอัปเดตระบบในอนาคต
 
 ```bash
 cd /home/automation-hub-sgp01/UpdateDailyGoldPrice
@@ -228,7 +246,7 @@ pm2 restart gold-price-editor --update-env
 pm2 save
 ```
 
-## 13) Troubleshooting เร็ว
+## 14) Troubleshooting เร็ว
 
 1. `401 unauthorized`:
 - token ไม่ตรง (`WRITE_API_TOKEN` vs header ที่ Caddy ส่ง)

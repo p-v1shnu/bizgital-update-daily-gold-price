@@ -3,3 +3,5 @@
 !.env.example
 node_modules/
 Caddyfile
+data/live-display.json
+assets/template_upload.tmp

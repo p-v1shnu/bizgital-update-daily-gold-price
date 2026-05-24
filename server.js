@@ -59,7 +59,10 @@ const NODE_ENV = process.env.NODE_ENV || "development";
 const WRITE_API_TOKEN = (process.env.WRITE_API_TOKEN || "").trim();
 const WP_WEBHOOK_URL_RAW = (process.env.WP_WEBHOOK_URL || "").trim();
 const WP_WEBHOOK_SECRET = (process.env.WP_WEBHOOK_SECRET || "").trim();
-const WEBHOOK_TIMEOUT_MS = Number(process.env.WP_WEBHOOK_TIMEOUT_MS || 8000);
+const WEBHOOK_TIMEOUT_MS = Math.max(2000, Number(process.env.WP_WEBHOOK_TIMEOUT_MS) || 8000);
+const SHOW_LOCAL_TOKEN_INPUT = /^(1|true|yes)$/i.test(
+  (process.env.SHOW_LOCAL_TOKEN_INPUT || (NODE_ENV === "production" ? "false" : "true")).trim(),
+);
 
 const MAX_TEMPLATE_BYTES = 10 * 1024 * 1024;
 const MAX_LAYOUT_BYTES = 256 * 1024;
@@ -69,6 +72,10 @@ const STATIC_FILES = new Map([
   ["/", path.join(ROOT, "index.html")],
   ["/app.js", path.join(ROOT, "app.js")],
   ["/styles.css", path.join(ROOT, "styles.css")],
+  ["/display", path.join(ROOT, "display.html")],
+  ["/display/", path.join(ROOT, "display.html")],
+  ["/display.js", path.join(ROOT, "display.js")],
+  ["/display.css", path.join(ROOT, "display.css")],
 ]);
 
 const TEMPLATE_MIME_TO_EXT = {
@@ -76,6 +83,11 @@ const TEMPLATE_MIME_TO_EXT = {
   "image/jpeg": "jpg",
   "image/webp": "webp",
 };
+const LIVE_DISPLAY_DATA_PATH = path.join(DATA_DIR, "live-display.json");
+const RATE_LIMIT_WINDOW_MS = 60_000;
+const RATE_LIMIT_API_EVENTS = Math.max(60, Number(process.env.RATE_LIMIT_API_EVENTS) || 240);
+const RATE_LIMIT_DISPLAY_EVENTS = Math.max(30, Number(process.env.RATE_LIMIT_DISPLAY_EVENTS) || 180);
+const RATE_LIMIT_WRITE_EVENTS = Math.max(5, Number(process.env.RATE_LIMIT_WRITE_EVENTS) || 30);
 
 // --- Startup validation ---
 
@@ -104,6 +116,10 @@ fs.mkdirSync(DATA_DIR, { recursive: true });
 // --- Template in-memory cache (invalidated on upload) ---
 
 let templateCache = null; // { data: Buffer, mime: string } | null
+let layoutCache = null; // string | null
+let defaultLayoutCache = null; // string | null
+let displayDataCache = null; // string | null
+const rateLimitState = new Map();
 
 function getCachedTemplate() {
   if (templateCache) return templateCache;
@@ -119,6 +135,76 @@ function getCachedTemplate() {
 
 function invalidateTemplateCache() {
   templateCache = null;
+}
+
+async function readCachedUtf8File(cacheValue, filePath) {
+  if (cacheValue !== null) {
+    return cacheValue;
+  }
+  const data = await fs.promises.readFile(filePath, "utf8");
+  return data;
+}
+
+function getClientIp(req) {
+  const xff = getHeaderValue(req.headers["x-forwarded-for"]);
+  if (xff) {
+    const first = xff.split(",")[0].trim();
+    if (first) {
+      return first;
+    }
+  }
+  return req.socket?.remoteAddress || "unknown";
+}
+
+function getRateLimitRule(req, url) {
+  if (!url.pathname.startsWith("/api/")) {
+    return null;
+  }
+
+  if (req.method === "POST") {
+    return { events: RATE_LIMIT_WRITE_EVENTS, windowMs: RATE_LIMIT_WINDOW_MS };
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/display-data") {
+    return { events: RATE_LIMIT_DISPLAY_EVENTS, windowMs: RATE_LIMIT_WINDOW_MS };
+  }
+
+  return { events: RATE_LIMIT_API_EVENTS, windowMs: RATE_LIMIT_WINDOW_MS };
+}
+
+function isRateLimited(req, res, url) {
+  const rule = getRateLimitRule(req, url);
+  if (!rule) {
+    return false;
+  }
+
+  if (rateLimitState.size > 20_000) {
+    const cutoff = Date.now() - (RATE_LIMIT_WINDOW_MS * 3);
+    for (const [key, entry] of rateLimitState.entries()) {
+      if (entry.windowStart < cutoff) {
+        rateLimitState.delete(key);
+      }
+    }
+  }
+
+  const ip = getClientIp(req);
+  const key = `${req.method}:${url.pathname}:${ip}`;
+  const now = Date.now();
+  const current = rateLimitState.get(key);
+  if (!current || now - current.windowStart >= rule.windowMs) {
+    rateLimitState.set(key, { windowStart: now, count: 1 });
+    return false;
+  }
+
+  current.count += 1;
+  if (current.count <= rule.events) {
+    return false;
+  }
+
+  const retryAfterMs = Math.max(0, rule.windowMs - (now - current.windowStart));
+  res.setHeader("Retry-After", String(Math.ceil(retryAfterMs / 1000)));
+  json(res, 429, { ok: false, error: "rate limit exceeded" });
+  return true;
 }
 
 // --- HTTP helpers ---
@@ -143,6 +229,14 @@ function addSecurityHeaders(res) {
   res.setHeader("X-Frame-Options", "DENY");
   res.setHeader("Referrer-Policy", "no-referrer");
   res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+  // Tight CSP: scripts/styles/fonts from same origin only; data: and blob: for canvas exports.
+  // No 'unsafe-inline' — all pages use external .js and .css files.
+  res.setHeader(
+    "Content-Security-Policy",
+    "default-src 'self'; script-src 'self'; style-src 'self'; " +
+    "img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; " +
+    "object-src 'none'; base-uri 'self'; frame-ancestors 'none'",
+  );
   if (NODE_ENV === "production") {
     res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
   }
@@ -390,6 +484,53 @@ function parsePublishPayload(payload) {
   };
 }
 
+function parseLiveDisplayPayload(payload) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    throw createHttpError(400, "invalid payload");
+  }
+
+  const date = typeof payload.date === "string" ? payload.date.trim() : "";
+  const time = typeof payload.time === "string" ? payload.time.trim() : "";
+  if (!date || !time) {
+    throw createHttpError(400, "date/time is required");
+  }
+  if (!DATE_RE.test(date)) {
+    throw createHttpError(400, "invalid date format (expected DD/MM/YYYY)");
+  }
+  if (!TIME_RE.test(time)) {
+    throw createHttpError(400, "invalid time format (expected HH:MM)");
+  }
+
+  const valueKeyMap = {
+    barSellOneBaht: ["barSellOneBaht"],
+    barBuyOneBaht: ["barBuyOneBaht"],
+    printSellOneBaht: ["printSellOneBaht"],
+    printBuyOneBaht: ["printBuyOneBaht"],
+    printSellOneSalueng: ["printSellOneSalueng"],
+    printBuyOneSalueng: ["printBuyOneSalueng"],
+    printSellFiveHoun: ["printSellFiveHoun", "printSellFiveTamlueng"],
+    printBuyFiveHoun: ["printBuyFiveHoun", "printBuyFiveTamlueng"],
+  };
+
+  const values = {};
+  for (const [key, inputKeys] of Object.entries(valueKeyMap)) {
+    const sourceKey = inputKeys.find((candidate) => payload[candidate] !== undefined);
+    const sourceValue = sourceKey ? payload[sourceKey] : undefined;
+    const normalized = normalizePriceValue(sourceValue);
+    if (normalized === null || normalized <= 0) {
+      throw createHttpError(400, `invalid value: ${key}`);
+    }
+    values[key] = normalized;
+  }
+
+  return {
+    date,
+    time,
+    values,
+    updatedAt: new Date().toISOString(),
+  };
+}
+
 async function publishToWordpress(payload) {
   if (!WP_WEBHOOK_URL || !WP_WEBHOOK_SECRET) {
     throw createHttpError(503, "wordpress webhook is not configured");
@@ -522,6 +663,11 @@ async function handleApi(req, res, url) {
     return;
   }
 
+  if (req.method === "GET" && url.pathname === "/api/public-config") {
+    json(res, 200, { showLocalTokenInput: SHOW_LOCAL_TOKEN_INPUT });
+    return;
+  }
+
   if (req.method === "GET" && url.pathname === "/api/template") {
     const tmpl = getCachedTemplate();
     if (!tmpl) {
@@ -534,11 +680,16 @@ async function handleApi(req, res, url) {
 
   if (req.method === "GET" && url.pathname === "/api/layout") {
     const layoutPath = path.join(DATA_DIR, "layout.json");
-    if (!fs.existsSync(layoutPath)) {
-      send(res, 404, { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" }, "layout not found");
-      return;
+    try {
+      layoutCache = await readCachedUtf8File(layoutCache, layoutPath);
+      send(res, 200, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" }, layoutCache);
+    } catch (error) {
+      if (error && error.code === "ENOENT") {
+        send(res, 404, { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" }, "layout not found");
+        return;
+      }
+      throw error;
     }
-    send(res, 200, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" }, fs.readFileSync(layoutPath));
     return;
   }
 
@@ -550,18 +701,60 @@ async function handleApi(req, res, url) {
     if (!validateLayoutPayload(body)) {
       throw createHttpError(400, "invalid layout payload");
     }
-    await fs.promises.writeFile(path.join(DATA_DIR, "layout.json"), JSON.stringify(body), "utf8");
+    const serialized = JSON.stringify(body);
+    await fs.promises.writeFile(path.join(DATA_DIR, "layout.json"), serialized, "utf8");
+    layoutCache = serialized;
     json(res, 200, { ok: true });
     return;
   }
 
   if (req.method === "GET" && url.pathname === "/api/default-layout") {
     const defaultLayoutPath = path.join(DATA_DIR, "default-layout.json");
-    if (!fs.existsSync(defaultLayoutPath)) {
-      send(res, 404, { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" }, "default layout not found");
+    try {
+      defaultLayoutCache = await readCachedUtf8File(defaultLayoutCache, defaultLayoutPath);
+      send(res, 200, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" }, defaultLayoutCache);
+    } catch (error) {
+      if (error && error.code === "ENOENT") {
+        send(res, 404, { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" }, "default layout not found");
+        return;
+      }
+      throw error;
+    }
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/display-data") {
+    try {
+      displayDataCache = await readCachedUtf8File(displayDataCache, LIVE_DISPLAY_DATA_PATH);
+      send(
+        res,
+        200,
+        { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" },
+        displayDataCache,
+      );
+    } catch (error) {
+      if (error && error.code === "ENOENT") {
+        send(res, 404, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" }, JSON.stringify({
+          ok: false,
+          error: "display data not found",
+        }));
+        return;
+      }
+      throw error;
+    }
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/display-data") {
+    if (!requireWriteAccess(req, res)) {
       return;
     }
-    send(res, 200, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" }, fs.readFileSync(defaultLayoutPath));
+    const body = await readJsonBody(req, MAX_PUBLISH_BYTES, 10_000);
+    const normalized = parseLiveDisplayPayload(body);
+    const serialized = JSON.stringify(normalized);
+    await fs.promises.writeFile(LIVE_DISPLAY_DATA_PATH, serialized, "utf8");
+    displayDataCache = serialized;
+    json(res, 200, { ok: true, updatedAt: normalized.updatedAt });
     return;
   }
 
@@ -573,7 +766,9 @@ async function handleApi(req, res, url) {
     if (!validateLayoutPayload(body)) {
       throw createHttpError(400, "invalid layout payload");
     }
-    await fs.promises.writeFile(path.join(DATA_DIR, "default-layout.json"), JSON.stringify(body), "utf8");
+    const serialized = JSON.stringify(body);
+    await fs.promises.writeFile(path.join(DATA_DIR, "default-layout.json"), serialized, "utf8");
+    defaultLayoutCache = serialized;
     json(res, 200, { ok: true });
     return;
   }
@@ -607,7 +802,17 @@ async function handleApi(req, res, url) {
     const inputPayload = await readJsonBody(req, MAX_PUBLISH_BYTES, 10_000);
     const publishPayload = parsePublishPayload(inputPayload);
     const publishResult = await publishToWordpress(publishPayload);
-    json(res, 200, publishResult);
+    const displayPayload = parseLiveDisplayPayload(inputPayload);
+    let displayDataWarning = null;
+    try {
+      const serialized = JSON.stringify(displayPayload);
+      await fs.promises.writeFile(LIVE_DISPLAY_DATA_PATH, serialized, "utf8");
+      displayDataCache = serialized;
+    } catch (error) {
+      console.error("Failed to sync display data after WordPress publish:", error);
+      displayDataWarning = "display data update failed";
+    }
+    json(res, 200, displayDataWarning ? { ...publishResult, displayDataWarning } : publishResult);
     return;
   }
 
@@ -672,6 +877,9 @@ const server = http.createServer(async (req, res) => {
   addSecurityHeaders(res);
 
   const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
+  if (isRateLimited(req, res, url)) {
+    return;
+  }
   try {
     if (url.pathname === "/health" || url.pathname.startsWith("/api/")) {
       await handleApi(req, res, url);
